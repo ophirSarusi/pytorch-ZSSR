@@ -10,18 +10,18 @@ class simpleNet(nn.Module):
 		d = 1
 		if Y == False:
 			d = 3
+
 		self.input = nn.Conv2d(in_channels=d, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
+
 		self.conv1 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 		self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 		self.conv3 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 		self.conv4 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 		self.conv5 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
-		
 		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 
-	
 		self.output = nn.Conv2d(in_channels=128, out_channels=d, kernel_size=3, stride=1, padding=1, bias=False)
-		self.relu = nn.ReLU(inplace=True)
+		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization
 		for m in self.modules():
@@ -32,8 +32,8 @@ class simpleNet(nn.Module):
 	def forward(self, x):
 		residual = x
 		inputs = self.input(self.relu(x))
+
 		out = inputs
-		
 		out = self.conv1(self.relu(out))
 		out = self.conv2(self.relu(out))
 		out = self.conv3(self.relu(out))
@@ -41,9 +41,8 @@ class simpleNet(nn.Module):
 		out = self.conv5(self.relu(out))
 		out = self.conv6(self.relu(out))
 
-		#out = torch.add(out, inputs)
-
 		out = self.output(self.relu(out))
 		
 		out = torch.add(out, residual)
+
 		return out

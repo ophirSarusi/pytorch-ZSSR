@@ -56,7 +56,6 @@ class ZSSR:
     hr_father_image_space = None
     out_image_space = None
 
-
     def __init__(self, input_img, conf=Config(), ground_truth=None, kernels=None):
         # Acquire meta parameters configuration from configuration class as a class variable
         self.conf = conf
@@ -66,13 +65,13 @@ class ZSSR:
         self.Y = False
         if len(self.input)==2:
             self.Y = True
-        #input is ndarray
+        # input is ndarray
         # For evaluation purposes, ground-truth image can be supplied.
         self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
-        #gt is ndarray
+        # gt is ndarray
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
-        #downsample kernel custom
+        # downsample kernel custom
         # Prepare TF default computational graph
         # declare model here severs as initial model
         print(self.Y)
@@ -108,7 +107,7 @@ class ZSSR:
             # Initialize network
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
-            if self.conf.init_net_for_each_sf == True:
+            if self.conf.init_net_for_each_sf:
                 self.model = simpleNet(self.Y)
             if self.cuda:
                 self.model = self.model.cuda()
@@ -141,13 +140,11 @@ class ZSSR:
         # noinspection PyUnboundLocalVariable
         return post_processed_output
 
-  
-
     def init_parameters(self):
         # Sometimes we only want to initialize some meta-params but keep the weights as they were
         # no need to init weight, done as model declaration
         # Initialize all counters etc
-        #no need to change. For record here
+        # no need to change. For record here
         self.loss = [None] * self.conf.max_iters 
         self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse, self.mse_steps = [], [], [], [], []
         self.iter = 0
@@ -175,7 +172,7 @@ class ZSSR:
         # small_son size is 4. if we upscale by sf=2 we get wrong size, if we upscale to size 9 we get wrong sf.
         # The current imresize implementation supports specifying both.
         interpolated_lr_son = imresize(lr_son, self.sf, hr_father.shape, self.conf.upscale_method)
-        if self.Y == True:
+        if self.Y:
             lr_son_input = torch.Tensor(interpolated_lr_son).unsqueeze_(0).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0)
         else:
@@ -183,7 +180,7 @@ class ZSSR:
             hr_father = torch.Tensor(hr_father).permute(2,0,1).unsqueeze_(0)
         lr_son_input = lr_son_input.requires_grad_()
         
-        if self.cuda == True:
+        if self.cuda:
             hr_father = hr_father.cuda()
             lr_son_input = lr_son_input.cuda()
       
@@ -199,14 +196,13 @@ class ZSSR:
     def forward_pass(self, lr_son, hr_father_shape=None):
         # First gate for the lr-son into the network is interpolation to the size of the father
         interpolated_lr_son = imresize(lr_son, self.sf, hr_father_shape, self.conf.upscale_method)
-        if self.Y == True:
+        if self.Y:
             interpolated_lr_son = (torch.Tensor(interpolated_lr_son)).unsqueeze_(0).unsqueeze_(0)
         else:
             interpolated_lr_son = (torch.Tensor(interpolated_lr_son).permute(2,0,1)).unsqueeze_(0)
         if self.cuda:
             interpolated_lr_son = interpolated_lr_son.cuda()
         # Create feed dict
-        
 
         # Run network
         return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0,2,3,1).numpy()), 0, 1)
@@ -216,7 +212,7 @@ class ZSSR:
         if (not (1 + self.iter) % self.conf.learning_rate_policy_check_every
                 and self.iter - self.learning_rate_change_iter_nums[-1] > self.conf.min_iters):
             # noinspection PyTupleAssignmentBalance
-            #print(self.conf.run_test_every)
+            # print(self.conf.run_test_every)
             [slope, _], [[var, _], _] = np.polyfit(self.mse_steps[-(self.conf.learning_rate_slope_range //
                                                                     self.conf.run_test_every):],
                                                    self.mse_rec[-(self.conf.learning_rate_slope_range //
@@ -430,3 +426,4 @@ class ZSSR:
         # These line are needed in order to see the graphics at real time
         self.fig.canvas.draw()
         plt.pause(0.01)
+        plt.show()
