@@ -3,6 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.image as img
 from matplotlib.gridspec import GridSpec
+from skimage import color
 from configs import Config
 from utils import *
 from simplenet import simpleNet
@@ -60,10 +61,18 @@ class ZSSR:
         # Acquire meta parameters configuration from configuration class as a class variable
         self.conf = conf
         self.cuda = conf.cuda
+
         # Read input image (can be either a numpy array or a path to an image file)
-        self.input = input_img if type(input_img) is not str else img.imread(input_img)
+        if self.conf.rgb_to_lab:
+            self.input_rgb = input_img if type(input_img) is not str else img.imread(input_img)
+            self.input_lab = color.rgb2lab(self.input_rgb)
+            self.input = self.input_lab[:, :, 0]  # get only L channel to feed to the network
+        else:
+            self.input = input_img if type(input_img) is not str else img.imread(input_img)
+
         self.Y = False
-        if len(self.input)==2:
+        if len(self.input.shape) == 2:
+            # the image has only one channel
             self.Y = True
         # input is ndarray
         # For evaluation purposes, ground-truth image can be supplied.
@@ -74,11 +83,11 @@ class ZSSR:
         # downsample kernel custom
         # Prepare TF default computational graph
         # declare model here severs as initial model
-        print(self.Y)
+        print(f'self.Y: {self.Y}')
         self.model = simpleNet(self.Y)
 
         # Build network computational graph
-        #self.build_network(conf)
+        # self.build_network(conf)
 
         # Initialize network weights and meta parameters
         self.init_parameters()
@@ -103,12 +112,12 @@ class ZSSR:
                 sf = [sf, sf]
             self.sf = np.array(sf) / np.array(self.base_sf)
             self.output_shape = np.uint(np.ceil(np.array(self.input.shape[0:2]) * sf))
-            print('input shape',self.input.shape)
+            print('input shape', self.input.shape)
             # Initialize network
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
             if self.conf.init_net_for_each_sf:
-                self.model = simpleNet(self.Y)
+                self.model = simpleNet(self.Y, loss_type=self.conf.loss_type)
             if self.cuda:
                 self.model = self.model.cuda()
 
@@ -166,7 +175,7 @@ class ZSSR:
                               np.any(np.abs(self.sf - self.conf.scale_factors[-1]) > 0.01))
                           else self.gt)
 
-    def forward_backward_pass(self, lr_son, hr_father,criterion,optimizer):
+    def forward_backward_pass(self, lr_son, hr_father, criterion, optimizer):
         # First gate for the lr-son into the network is interpolation to the size of the father
         # Note: we specify both output_size and scale_factor. best explained by example: say father size is 9 and sf=2,
         # small_son size is 4. if we upscale by sf=2 we get wrong size, if we upscale to size 9 we get wrong sf.
@@ -185,13 +194,18 @@ class ZSSR:
             lr_son_input = lr_son_input.cuda()
       
         train_output = self.model(lr_son_input)
-        loss = criterion(hr_father,train_output)
+        if self.conf.loss_type == 'ce':
+            hr_father = (255 * hr_father.squeeze(1)).long()  # remove the channel domain for the CE loss and convert to uint8
+        loss = criterion(train_output, hr_father)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         self.loss[self.iter] = loss
 
-        return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
+        if self.conf.loss_type == 'mse':
+            return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
+        elif self.conf.loss_type == 'ce':
+            return np.clip(np.squeeze(train_output.argmax(dim=1).cpu().detach().numpy()), 0, 1)
 
     def forward_pass(self, lr_son, hr_father_shape=None):
         # First gate for the lr-son into the network is interpolation to the size of the father
@@ -205,7 +219,10 @@ class ZSSR:
         # Create feed dict
 
         # Run network
-        return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0,2,3,1).numpy()), 0, 1)
+        if self.conf.loss_type == 'mse':
+            return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
+        elif self.conf.loss_type == 'ce':
+            return np.clip(np.squeeze(self.model(interpolated_lr_son).argmax(dim=1).cpu().detach().permute(0, 1, 2).numpy()), 0, 1)
 
     def learning_rate_policy(self):
         # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
@@ -268,9 +285,13 @@ class ZSSR:
             self.plot()
 
     def train(self):
-        #def loss and optimizer
-        criterion = nn.MSELoss()
-        optimizer = torch.optim.Adam(self.model.parameters(),lr = self.learning_rate)
+        # define loss and optimizer
+        if self.conf.loss_type == 'mse':
+            criterion = nn.MSELoss()
+        elif self.conf.loss_type == 'ce':
+            criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+
         # main training loop
         for self.iter in range(self.conf.max_iters):
             # Use augmentation from original input image to create current father.
@@ -288,11 +309,10 @@ class ZSSR:
 
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
-            #should convert input and output to torch tensor
+            # should convert input and output to torch tensor
 
-            
             # run network forward and back propagation, one iteration (This is the heart of the training)
-            self.train_output = self.forward_backward_pass(self.lr_son, self.hr_father,criterion,optimizer)
+            self.train_output = self.forward_backward_pass(self.lr_son, self.hr_father, criterion, optimizer)
 
             # Display info and save weights
             if not self.iter % self.conf.display_every:

@@ -18,7 +18,6 @@ def main(conf_name, gpu):
         namespace = {'conf': None}
         conf = eval('configs.%s' % conf_name)
 
-
     res_dir = prepare_result_dir(conf)
     local_dir = os.path.dirname(__file__)
 

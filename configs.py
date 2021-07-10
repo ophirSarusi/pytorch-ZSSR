@@ -29,6 +29,10 @@ class Config:
     learning_rate_policy_check_every = 60
     learning_rate_slope_range = 256
 
+    # extra params
+    rgb_to_lab = False
+    loss_type = 'ce'  # ce or mse
+
     # Data augmentation related params
     augment_leave_as_is_probability = 0.05
     augment_no_interpolate_probability = 0.45
@@ -42,7 +46,7 @@ class Config:
     run_test_every = 50
     display_every = 20
     name = 'test'
-    plot_losses = False
+    plot_losses = True
     result_path = os.path.dirname(__file__) + '/results'
     create_results_dir = True
     input_path = local_dir = os.path.dirname(__file__) + '/test_data'
@@ -70,7 +74,8 @@ X2_ONE_JUMP_IDEAL_CONF.input_path = os.path.dirname(__file__) + '/set14'
 X2_IDEAL_WITH_PLOT_CONF = Config()
 X2_IDEAL_WITH_PLOT_CONF.plot_losses = True
 X2_IDEAL_WITH_PLOT_CONF.run_test_every = 20
-X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/example_with_gt'
+# X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/example_with_gt'
+X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/test_data'
 
 # Gradual SRx2, to achieve superior results in the ideal case
 X2_GRADUAL_IDEAL_CONF = Config()

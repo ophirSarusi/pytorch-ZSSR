@@ -6,7 +6,6 @@ import ZSSR
 
 def main(input_img, ground_truth, kernels, gpu, conf_str, results_path):
     # Choose the wanted GPU
-    
 
     # 0 input for ground-truth or kernels means None
     ground_truth = None if ground_truth == '0' else ground_truth
@@ -16,7 +15,7 @@ def main(input_img, ground_truth, kernels, gpu, conf_str, results_path):
     # Setup configuration and results directory
     conf = configs.Config()
     if conf_str is not None:
-        exec ('conf = configs.%s' % conf_str)
+        exec('conf = configs.%s' % conf_str)
     conf.result_path = results_path
 
     # Run ZSSR on the image

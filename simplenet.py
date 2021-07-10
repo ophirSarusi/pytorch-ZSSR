@@ -4,12 +4,17 @@ import torch.nn.functional as F
 from math import sqrt
 from torch.autograd import Variable
 
+
 class simpleNet(nn.Module):
-	def __init__(self,Y=True):
+	def __init__(self, Y=True, loss_type='mse'):
 		super(simpleNet, self).__init__()
-		d = 1
-		if Y == False:
-			d = 3
+		in_d = 1
+		if not Y:
+			in_d = 3
+
+		out_d = in_d
+		if loss_type == 'ce':
+			out_d = 256
 
 		self.input = nn.Conv2d(in_channels=d, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 
@@ -20,7 +25,7 @@ class simpleNet(nn.Module):
 		self.conv5 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 
-		self.output = nn.Conv2d(in_channels=128, out_channels=d, kernel_size=3, stride=1, padding=1, bias=False)
+		self.output = nn.Conv2d(in_channels=128, out_channels=out_d, kernel_size=3, stride=1, padding=1, bias=False)
 		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization
