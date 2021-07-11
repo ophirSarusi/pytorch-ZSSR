@@ -8,6 +8,7 @@ from configs import Config
 from utils import *
 from simplenet import simpleNet
 
+
 class ZSSR:
     # Basic current state variables initialization / declaration
     kernel = None
@@ -67,6 +68,7 @@ class ZSSR:
             self.input_rgb = input_img if type(input_img) is not str else img.imread(input_img)
             self.input_lab = color.rgb2lab(self.input_rgb)
             self.input = self.input_lab[:, :, 0]  # get only L channel to feed to the network
+
         else:
             self.input = input_img if type(input_img) is not str else img.imread(input_img)
 
@@ -74,17 +76,17 @@ class ZSSR:
         if len(self.input.shape) == 2:
             # the image has only one channel
             self.Y = True
-        # input is ndarray
-        # For evaluation purposes, ground-truth image can be supplied.
+
+            # For evaluation purposes, ground-truth image can be supplied.
         self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
-        # gt is ndarray
+
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
         # downsample kernel custom
-        # Prepare TF default computational graph
+
         # declare model here severs as initial model
         print(f'self.Y: {self.Y}')
-        self.model = simpleNet(self.Y)
+        self.model = simpleNet(self.Y, self.conf.loss_type)
 
         # Build network computational graph
         # self.build_network(conf)
@@ -220,9 +222,17 @@ class ZSSR:
 
         # Run network
         if self.conf.loss_type == 'mse':
-            return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
+            prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
-            return np.clip(np.squeeze(self.model(interpolated_lr_son).argmax(dim=1).cpu().detach().permute(0, 1, 2).numpy()), 0, 1)
+            prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).argmax(dim=1).cpu().detach().permute(0, 1, 2).numpy()), 0, 1)
+
+        if self.conf.rgb_to_lab:
+            # concatenate predicted L channel to interpolated input ab channels
+            interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:,:,1:]
+            predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
+            return color.lab2rgb(predicted_lab)
+        else:
+            return prediction_ndarray
 
     def learning_rate_policy(self):
         # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
@@ -251,6 +261,9 @@ class ZSSR:
                 self.learning_rate_change_iter_nums.append(self.iter)
 
     def quick_test(self):
+
+        rgb_input = self.input_rgb if self.conf.rgb_to_lab else self.input
+
         # There are four evaluations needed to be calculated:
 
         # 1. True MSE (only if ground-truth was given), note: this error is before post-processing.
@@ -261,16 +274,16 @@ class ZSSR:
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
-        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
+        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(rgb_input - self.reconstruct_output))))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
-        interp_sr = imresize(self.input, self.sf, self.output_shape, self.conf.upscale_method)
+        interp_sr = imresize(rgb_input, self.sf, self.output_shape, self.conf.upscale_method)
         self.interp_mse = (self.interp_mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - interp_sr)))]
                            if self.gt_per_sf is not None else None)
 
         # 4. Reconstruction MSE of simple interpolation over downscaled input
-        interp_rec = imresize(self.father_to_son(self.input), self.sf, self.input.shape[0:2], self.conf.upscale_method)
-        self.interp_rec_mse.append(np.mean(np.ndarray.flatten(np.square(self.input - interp_rec))))
+        interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2], self.conf.upscale_method)
+        self.interp_rec_mse.append(np.mean(np.ndarray.flatten(np.square(rgb_input - interp_rec))))
 
         # Track the iters in which tests are made for the graphics x axis
         self.mse_steps.append(self.iter)

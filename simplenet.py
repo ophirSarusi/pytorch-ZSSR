@@ -16,7 +16,7 @@ class simpleNet(nn.Module):
 		if loss_type == 'ce':
 			out_d = 256
 
-		self.input = nn.Conv2d(in_channels=d, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
+		self.input = nn.Conv2d(in_channels=in_d, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 
 		self.conv1 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
 		self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
