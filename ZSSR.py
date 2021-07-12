@@ -198,12 +198,12 @@ class ZSSR:
         if self.conf.loss == 'ce':
             # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
             hr_father = nn.functional.one_hot(hr_father_targets.reshape(1, -1), 256).float()
-
+            if self.cuda == True:
+                hr_father = hr_father.cuda()
             train_output = train_output.view(1, -1, 256)
             if self.conf.label_smoothing:
                 smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma)
                 if self.cuda == True:
-                    hr_father = hr_father.cuda()
                     smoother = smoother.cuda()
                 hr_father = smoother(hr_father)
 
@@ -270,7 +270,7 @@ class ZSSR:
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
-        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square((self.input * 255) - self.reconstruct_output))))
+        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(self.input, self.sf, self.output_shape, self.conf.upscale_method)
@@ -453,6 +453,5 @@ class ZSSR:
         self.hr_father_image_space.imshow(self.hr_father, vmin=0.0, vmax=1.0)
 
         # These line are needed in order to see the graphics at real time
-        plt.savefig('./tmp.png')
-        # self.fig.canvas.draw()
-        # plt.pause(0.01)
+        self.fig.canvas.draw()
+        plt.pause(0.01)
