@@ -67,7 +67,7 @@ class ZSSR:
         if self.conf.rgb_to_lab:
             self.input_rgb = input_img if type(input_img) is not str else img.imread(input_img)
             self.input_lab = color.rgb2lab(self.input_rgb)
-            self.input = self.input_lab[:, :, 0]  # get only L channel to feed to the network
+            self.input = self.input_lab[:, :, 0] / 100  # get only L channel to feed to the network and normalize between 0 and 1
 
         else:
             self.input = input_img if type(input_img) is not str else img.imread(input_img)
@@ -229,7 +229,7 @@ class ZSSR:
         if self.conf.rgb_to_lab:
             # concatenate predicted L channel to interpolated input ab channels
             interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:,:,1:]
-            predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
+            predicted_lab = np.dstack((prediction_ndarray*100, interpolated_ab))
             return color.lab2rgb(predicted_lab)
         else:
             return prediction_ndarray
@@ -348,6 +348,8 @@ class ZSSR:
         return np.clip(lr_son + np.random.randn(*lr_son.shape) * self.conf.noise_std, 0, 1)
 
     def final_test(self):
+        rgb_input = self.input_rgb if self.conf.rgb_to_lab else self.input
+
         # Run over 8 augmentations of input - 4 rotations and mirror (geometric self ensemble)
         outputs = []
 
@@ -365,7 +367,9 @@ class ZSSR:
 
             # fix SR output with back projection technique for each augmentation
             for bp_iter in range(self.conf.back_projection_iters[self.sf_ind]):
-                tmp_output = back_projection(tmp_output, self.input, down_kernel=self.kernel,
+                # tmp_output = back_projection(tmp_output, self.input, down_kernel=self.kernel,
+                #                              up_kernel=self.conf.upscale_method, sf=self.sf)
+                tmp_output = back_projection(tmp_output, rgb_input, down_kernel=self.kernel,
                                              up_kernel=self.conf.upscale_method, sf=self.sf)
 
             # save outputs from all augmentations
@@ -376,7 +380,9 @@ class ZSSR:
 
         # Again back projection for the final fused result
         for bp_iter in range(self.conf.back_projection_iters[self.sf_ind]):
-            almost_final_sr = back_projection(almost_final_sr, self.input, down_kernel=self.kernel,
+            # almost_final_sr = back_projection(almost_final_sr, self.input, down_kernel=self.kernel,
+            #                                   up_kernel=self.conf.upscale_method, sf=self.sf)
+            almost_final_sr = back_projection(almost_final_sr, rgb_input, down_kernel=self.kernel,
                                               up_kernel=self.conf.upscale_method, sf=self.sf)
 
         # Now we can keep the final result (in grayscale case, colors still need to be added, but we don't care
