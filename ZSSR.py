@@ -6,6 +6,8 @@ from matplotlib.gridspec import GridSpec
 from configs import Config
 from utils import *
 from simplenet import simpleNet
+from image_cross_entropy import ImageCrossEntropy
+from gaussian_smoothing import GaussianTargetSmoothing
 
 class ZSSR:
     # Basic current state variables initialization / declaration
@@ -63,8 +65,9 @@ class ZSSR:
         self.cuda = conf.cuda
         # Read input image (can be either a numpy array or a path to an image file)
         self.input = input_img if type(input_img) is not str else img.imread(input_img)
+        self.input = self.input[:,:,0]
         self.Y = False
-        if len(self.input)==2:
+        if self.input.ndim==2:
             self.Y = True
         #input is ndarray
         # For evaluation purposes, ground-truth image can be supplied.
@@ -76,7 +79,7 @@ class ZSSR:
         # Prepare TF default computational graph
         # declare model here severs as initial model
         print(self.Y)
-        self.model = simpleNet(self.Y)
+        self.model = simpleNet(self.Y, self.conf.loss)
 
         # Build network computational graph
         #self.build_network(conf)
@@ -91,6 +94,7 @@ class ZSSR:
         # We keep the input file name to save the output with a similar name. If array was given rather than path
         # then we use default provided by the configs
         self.file_name = input_img if type(input_img) is str else conf.name
+
 
     def run(self):
         # Run gradually on all scale factors (if only one jump then this loop only happens once)
@@ -109,7 +113,7 @@ class ZSSR:
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
             if self.conf.init_net_for_each_sf == True:
-                self.model = simpleNet(self.Y)
+                self.model = simpleNet(self.Y, self.conf.loss)
             if self.cuda:
                 self.model = self.model.cuda()
 
@@ -174,6 +178,7 @@ class ZSSR:
         # Note: we specify both output_size and scale_factor. best explained by example: say father size is 9 and sf=2,
         # small_son size is 4. if we upscale by sf=2 we get wrong size, if we upscale to size 9 we get wrong sf.
         # The current imresize implementation supports specifying both.
+
         interpolated_lr_son = imresize(lr_son, self.sf, hr_father.shape, self.conf.upscale_method)
         if self.Y == True:
             lr_son_input = torch.Tensor(interpolated_lr_son).unsqueeze_(0).unsqueeze_(0)
@@ -181,6 +186,7 @@ class ZSSR:
         else:
             lr_son_input = torch.Tensor(interpolated_lr_son).permute(2,0,1).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).permute(2,0,1).unsqueeze_(0)
+
         lr_son_input = lr_son_input.requires_grad_()
         
         if self.cuda == True:
@@ -188,7 +194,17 @@ class ZSSR:
             lr_son_input = lr_son_input.cuda()
       
         train_output = self.model(lr_son_input)
-        loss = criterion(hr_father,train_output)
+        if self.conf.loss == 'ce':
+            # print(train_output.shape)
+            hr_father = nn.functional.one_hot(hr_father.reshape(1, -1).long(), 256).float()
+            train_output = train_output.view(1, -1, 256)
+            # print(hr_father.shape)
+            # print(train_output.shape)
+            if self.conf.label_smoothing:
+                smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma).cuda()
+                hr_father = smoother(hr_father)
+
+        loss = criterion(hr_father, train_output)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -207,9 +223,12 @@ class ZSSR:
             interpolated_lr_son = interpolated_lr_son.cuda()
         # Create feed dict
         
-
+        if self.conf.loss == 'mse':
+            return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
+        else:
+            return np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy())
         # Run network
-        return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0,2,3,1).numpy()), 0, 1)
+
 
     def learning_rate_policy(self):
         # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
@@ -273,7 +292,10 @@ class ZSSR:
 
     def train(self):
         #def loss and optimizer
-        criterion = nn.MSELoss()
+        if self.conf.loss == 'mse':
+            criterion = nn.MSELoss()
+        else:
+            criterion = ImageCrossEntropy()
         optimizer = torch.optim.Adam(self.model.parameters(),lr = self.learning_rate)
         # main training loop
         for self.iter in range(self.conf.max_iters):
@@ -336,7 +358,7 @@ class ZSSR:
 
             # fix SR output with back projection technique for each augmentation
             for bp_iter in range(self.conf.back_projection_iters[self.sf_ind]):
-                tmp_output = back_projection(tmp_output, self.input, down_kernel=self.kernel,
+                tmp_output = back_projection(tmp_output.astype(float), self.input, down_kernel=self.kernel,
                                              up_kernel=self.conf.upscale_method, sf=self.sf)
 
             # save outputs from all augmentations

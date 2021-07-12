@@ -50,6 +50,11 @@ class Config:
     display_test_results = True
     save_results = True
 
+    # params: Benny
+    loss = 'ce'
+    label_smoothing = True
+    smooth_sigma = 1
+
     def __init__(self):
         # network meta params that by default are determined (by other params) by other params but can be changed
         self.filter_shape = ([[3, 3, 3, self.width]] +
@@ -77,6 +82,7 @@ X2_GRADUAL_IDEAL_CONF = Config()
 X2_GRADUAL_IDEAL_CONF.scale_factors = [[1.0, 1.5], [1.5, 1.0], [1.5, 1.5], [1.5, 2.0], [2.0, 1.5], [2.0, 2.0]]
 X2_GRADUAL_IDEAL_CONF.back_projection_iters = [6, 6, 8, 10, 10, 12]
 X2_GRADUAL_IDEAL_CONF.input_path = os.path.dirname(__file__) + '/set14'
+X2_GRADUAL_IDEAL_CONF.augment_leave_as_is_probability = 1.
 
 # Applying a given kernel. Rotations are canceled sense kernel may be non-symmetric
 X2_GIVEN_KERNEL_CONF = Config()
