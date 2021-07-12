@@ -1,3 +1,4 @@
+import numpy as np
 import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
@@ -64,14 +65,13 @@ class ZSSR:
         self.conf = conf
         self.cuda = conf.cuda
         # Read input image (can be either a numpy array or a path to an image file)
-        self.input = input_img if type(input_img) is not str else img.imread(input_img)
-        self.input = self.input[:,:,0]
+        self.input = input_img if type(input_img) is not str else img.imread(input_img)[:,:,0]
         self.Y = False
         if self.input.ndim==2:
             self.Y = True
         #input is ndarray
         # For evaluation purposes, ground-truth image can be supplied.
-        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
+        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)[:,:,0]
         #gt is ndarray
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
@@ -183,6 +183,7 @@ class ZSSR:
         if self.Y == True:
             lr_son_input = torch.Tensor(interpolated_lr_son).unsqueeze_(0).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0)
+            hr_father_targets = (torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0) * 255).long()
         else:
             lr_son_input = torch.Tensor(interpolated_lr_son).permute(2,0,1).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).permute(2,0,1).unsqueeze_(0)
@@ -195,13 +196,15 @@ class ZSSR:
       
         train_output = self.model(lr_son_input)
         if self.conf.loss == 'ce':
-            # print(train_output.shape)
-            hr_father = nn.functional.one_hot(hr_father.reshape(1, -1).long(), 256).float()
+            # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
+            hr_father = nn.functional.one_hot(hr_father_targets.reshape(1, -1), 256).float()
+
             train_output = train_output.view(1, -1, 256)
-            # print(hr_father.shape)
-            # print(train_output.shape)
             if self.conf.label_smoothing:
-                smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma).cuda()
+                smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma)
+                if self.cuda == True:
+                    hr_father = hr_father.cuda()
+                    smoother = smoother.cuda()
                 hr_father = smoother(hr_father)
 
         loss = criterion(hr_father, train_output)
@@ -267,7 +270,7 @@ class ZSSR:
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
-        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
+        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square((self.input * 255) - self.reconstruct_output))))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(self.input, self.sf, self.output_shape, self.conf.upscale_method)
@@ -450,5 +453,6 @@ class ZSSR:
         self.hr_father_image_space.imshow(self.hr_father, vmin=0.0, vmax=1.0)
 
         # These line are needed in order to see the graphics at real time
-        self.fig.canvas.draw()
-        plt.pause(0.01)
+        plt.savefig('./tmp.png')
+        # self.fig.canvas.draw()
+        # plt.pause(0.01)
