@@ -10,6 +10,7 @@ from simplenet import simpleNet
 from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
 
+
 class ZSSR:
     # Basic current state variables initialization / declaration
     kernel = None
@@ -59,30 +60,31 @@ class ZSSR:
     hr_father_image_space = None
     out_image_space = None
 
-
     def __init__(self, input_img, conf=Config(), ground_truth=None, kernels=None):
         # Acquire meta parameters configuration from configuration class as a class variable
         self.conf = conf
         self.cuda = conf.cuda
+        if self.conf.loss == 'ce':
+            self.conf.augment_no_interpolate_probability = 1.
         # Read input image (can be either a numpy array or a path to an image file)
-        self.input = input_img if type(input_img) is not str else img.imread(input_img)[:,:,0]
+        self.input = input_img if type(input_img) is not str else img.imread(input_img)[:, :, 0]
         self.Y = False
-        if self.input.ndim==2:
+        if self.input.ndim == 2:
             self.Y = True
-        #input is ndarray
+        # input is ndarray
         # For evaluation purposes, ground-truth image can be supplied.
-        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)[:,:,0]
-        #gt is ndarray
+        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)[:, :, 0]
+        # gt is ndarray
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
-        #downsample kernel custom
+        # downsample kernel custom
         # Prepare TF default computational graph
         # declare model here severs as initial model
         print(self.Y)
         self.model = simpleNet(self.Y, self.conf.loss)
 
         # Build network computational graph
-        #self.build_network(conf)
+        # self.build_network(conf)
 
         # Initialize network weights and meta parameters
         self.init_parameters()
@@ -94,7 +96,6 @@ class ZSSR:
         # We keep the input file name to save the output with a similar name. If array was given rather than path
         # then we use default provided by the configs
         self.file_name = input_img if type(input_img) is str else conf.name
-
 
     def run(self):
         # Run gradually on all scale factors (if only one jump then this loop only happens once)
@@ -108,7 +109,7 @@ class ZSSR:
                 sf = [sf, sf]
             self.sf = np.array(sf) / np.array(self.base_sf)
             self.output_shape = np.uint(np.ceil(np.array(self.input.shape[0:2]) * sf))
-            print('input shape',self.input.shape)
+            print('input shape', self.input.shape)
             # Initialize network
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
@@ -145,14 +146,12 @@ class ZSSR:
         # noinspection PyUnboundLocalVariable
         return post_processed_output
 
-  
-
     def init_parameters(self):
         # Sometimes we only want to initialize some meta-params but keep the weights as they were
         # no need to init weight, done as model declaration
         # Initialize all counters etc
-        #no need to change. For record here
-        self.loss = [None] * self.conf.max_iters 
+        # no need to change. For record here
+        self.loss = [None] * self.conf.max_iters
         self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse, self.mse_steps = [], [], [], [], []
         self.iter = 0
         self.learning_rate = self.conf.learning_rate
@@ -173,7 +172,7 @@ class ZSSR:
                               np.any(np.abs(self.sf - self.conf.scale_factors[-1]) > 0.01))
                           else self.gt)
 
-    def forward_backward_pass(self, lr_son, hr_father,criterion,optimizer):
+    def forward_backward_pass(self, lr_son, hr_father, criterion, optimizer):
         # First gate for the lr-son into the network is interpolation to the size of the father
         # Note: we specify both output_size and scale_factor. best explained by example: say father size is 9 and sf=2,
         # small_son size is 4. if we upscale by sf=2 we get wrong size, if we upscale to size 9 we get wrong sf.
@@ -185,22 +184,22 @@ class ZSSR:
             hr_father = torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0)
             hr_father_targets = (torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0) * 255).long()
         else:
-            lr_son_input = torch.Tensor(interpolated_lr_son).permute(2,0,1).unsqueeze_(0)
-            hr_father = torch.Tensor(hr_father).permute(2,0,1).unsqueeze_(0)
+            lr_son_input = torch.Tensor(interpolated_lr_son).permute(2, 0, 1).unsqueeze_(0)
+            hr_father = torch.Tensor(hr_father).permute(2, 0, 1).unsqueeze_(0)
 
         lr_son_input = lr_son_input.requires_grad_()
-        
+
         if self.cuda == True:
             hr_father = hr_father.cuda()
             lr_son_input = lr_son_input.cuda()
-      
+
         train_output = self.model(lr_son_input)
         if self.conf.loss == 'ce':
+            train_output = train_output.view(1, -1, 256)
             # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
             hr_father = nn.functional.one_hot(hr_father_targets.reshape(1, -1), 256).float()
             if self.cuda == True:
                 hr_father = hr_father.cuda()
-            train_output = train_output.view(1, -1, 256)
             if self.conf.label_smoothing:
                 smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma)
                 if self.cuda == True:
@@ -221,24 +220,23 @@ class ZSSR:
         if self.Y == True:
             interpolated_lr_son = (torch.Tensor(interpolated_lr_son)).unsqueeze_(0).unsqueeze_(0)
         else:
-            interpolated_lr_son = (torch.Tensor(interpolated_lr_son).permute(2,0,1)).unsqueeze_(0)
+            interpolated_lr_son = (torch.Tensor(interpolated_lr_son).permute(2, 0, 1)).unsqueeze_(0)
         if self.cuda:
             interpolated_lr_son = interpolated_lr_son.cuda()
         # Create feed dict
-        
+
         if self.conf.loss == 'mse':
             return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         else:
             return np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy())
         # Run network
 
-
     def learning_rate_policy(self):
         # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
         if (not (1 + self.iter) % self.conf.learning_rate_policy_check_every
                 and self.iter - self.learning_rate_change_iter_nums[-1] > self.conf.min_iters):
             # noinspection PyTupleAssignmentBalance
-            #print(self.conf.run_test_every)
+            # print(self.conf.run_test_every)
             [slope, _], [[var, _], _] = np.polyfit(self.mse_steps[-(self.conf.learning_rate_slope_range //
                                                                     self.conf.run_test_every):],
                                                    self.mse_rec[-(self.conf.learning_rate_slope_range //
@@ -265,12 +263,21 @@ class ZSSR:
         # 1. True MSE (only if ground-truth was given), note: this error is before post-processing.
         # Run net on the input to get the output super-resolution (almost final result, only post-processing needed)
         self.sr = self.forward_pass(self.input)
-        self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
-                    if self.gt_per_sf is not None else None)
+        if self.conf.loss == 'mse':
+            self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
+                        if self.gt_per_sf is not None else None)
+        else:
+            self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf * 255 - self.sr)))]
+                        if self.gt_per_sf is not None else None)
+
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
+
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
-        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
+        if self.conf.loss == 'mse':
+            self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
+        else:
+            self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input * 255 - self.reconstruct_output))))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(self.input, self.sf, self.output_shape, self.conf.upscale_method)
@@ -294,12 +301,13 @@ class ZSSR:
             self.plot()
 
     def train(self):
-        #def loss and optimizer
+        # def loss and optimizer
         if self.conf.loss == 'mse':
             criterion = nn.MSELoss()
         else:
             criterion = ImageCrossEntropy()
-        optimizer = torch.optim.Adam(self.model.parameters(),lr = self.learning_rate)
+
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
         # main training loop
         for self.iter in range(self.conf.max_iters):
             # Use augmentation from original input image to create current father.
@@ -309,7 +317,8 @@ class ZSSR:
                                             leave_as_is_probability=self.conf.augment_leave_as_is_probability,
                                             no_interpolate_probability=self.conf.augment_no_interpolate_probability,
                                             min_scale=self.conf.augment_min_scale,
-                                            max_scale=([1.0] + self.conf.scale_factors)[len(self.hr_fathers_sources)-1],
+                                            max_scale=([1.0] + self.conf.scale_factors)[
+                                                len(self.hr_fathers_sources) - 1],
                                             allow_rotation=self.conf.augment_allow_rotation,
                                             scale_diff_sigma=self.conf.augment_scale_diff_sigma,
                                             shear_sigma=self.conf.augment_shear_sigma,
@@ -317,15 +326,14 @@ class ZSSR:
 
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
-            #should convert input and output to torch tensor
+            # should convert input and output to torch tensor
 
-            
             # run network forward and back propagation, one iteration (This is the heart of the training)
-            self.train_output = self.forward_backward_pass(self.lr_son, self.hr_father,criterion,optimizer)
+            self.train_output = self.forward_backward_pass(self.lr_son, self.hr_father, criterion, optimizer)
 
             # Display info and save weights
             if not self.iter % self.conf.display_every:
-                print('sf:', self.sf*self.base_sf, ', iteration: ', self.iter, ', loss: ', self.loss[self.iter])
+                print('sf:', self.sf * self.base_sf, ', iteration: ', self.iter, ', loss: ', self.loss[self.iter])
 
             # Test network
             if self.conf.run_test and (not self.iter % self.conf.run_test_every):
@@ -390,7 +398,6 @@ class ZSSR:
         # Change base input image if required (this means current output becomes the new input)
         if abs(self.conf.scale_factors[self.sf_ind] - self.conf.base_change_sfs[self.base_ind]) < 0.001:
             if len(self.conf.base_change_sfs) > self.base_ind:
-
                 # The new input is the current output
                 self.input = self.final_sr
 
@@ -438,7 +445,7 @@ class ZSSR:
 
             self.loss_plot_space.set_xlim([0, self.iter + 1])
             all_losses = np.array(plots_data)
-            self.loss_plot_space.set_ylim([np.min(all_losses)*0.9, np.max(all_losses)*1.1])
+            self.loss_plot_space.set_ylim([np.min(all_losses) * 0.9, np.max(all_losses) * 1.1])
 
         # Mark learning rate changes
         for iter_num in self.learning_rate_change_iter_nums:

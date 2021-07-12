@@ -52,7 +52,7 @@ class Config:
 
     # params: Benny
     loss = 'ce'
-    label_smoothing = False
+    label_smoothing = True
     smooth_sigma = 1
 
     def __init__(self):
