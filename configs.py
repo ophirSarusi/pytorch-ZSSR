@@ -42,7 +42,7 @@ class Config:
     run_test_every = 50
     display_every = 20
     name = 'test'
-    plot_losses = False
+    plot_losses = True
     result_path = os.path.dirname(__file__) + '/results'
     create_results_dir = True
     input_path = local_dir = os.path.dirname(__file__) + '/test_data'
@@ -52,7 +52,7 @@ class Config:
 
     # params: Benny
     loss = 'ce'
-    label_smoothing = True
+    label_smoothing = False
     smooth_sigma = 1
 
     def __init__(self):

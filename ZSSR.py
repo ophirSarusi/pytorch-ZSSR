@@ -9,7 +9,7 @@ from utils import *
 from simplenet import simpleNet
 from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
-
+from skimage import color
 
 class ZSSR:
     # Basic current state variables initialization / declaration
@@ -64,16 +64,16 @@ class ZSSR:
         # Acquire meta parameters configuration from configuration class as a class variable
         self.conf = conf
         self.cuda = conf.cuda
-        if self.conf.loss == 'ce':
-            self.conf.augment_no_interpolate_probability = 1.
+        # if self.conf.loss == 'ce':
+        #     self.conf.augment_leave_as_is_probability = 1.
         # Read input image (can be either a numpy array or a path to an image file)
-        self.input = input_img if type(input_img) is not str else img.imread(input_img)[:, :, 0]
+        self.input = input_img if type(input_img) is not str else color.rgb2gray(img.imread(input_img))
         self.Y = False
         if self.input.ndim == 2:
             self.Y = True
         # input is ndarray
         # For evaluation purposes, ground-truth image can be supplied.
-        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)[:, :, 0]
+        self.gt = ground_truth if type(ground_truth) is not str else color.rgb2gray(img.imread(ground_truth))
         # gt is ndarray
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
@@ -182,7 +182,7 @@ class ZSSR:
         if self.Y == True:
             lr_son_input = torch.Tensor(interpolated_lr_son).unsqueeze_(0).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0)
-            hr_father_targets = (torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0) * 255).long()
+            hr_father_targets = (hr_father * 255).long()
         else:
             lr_son_input = torch.Tensor(interpolated_lr_son).permute(2, 0, 1).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).permute(2, 0, 1).unsqueeze_(0)
@@ -197,7 +197,7 @@ class ZSSR:
         if self.conf.loss == 'ce':
             train_output = train_output.view(1, -1, 256)
             # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
-            hr_father = nn.functional.one_hot(hr_father_targets.reshape(1, -1), 256).float()
+            hr_father = nn.functional.one_hot(hr_father_targets.reshape(1, -1), 256).float() # [1, HW, 256]
             if self.cuda == True:
                 hr_father = hr_father.cuda()
             if self.conf.label_smoothing:
@@ -228,7 +228,7 @@ class ZSSR:
         if self.conf.loss == 'mse':
             return np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         else:
-            return np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy())
+            return np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255
         # Run network
 
     def learning_rate_policy(self):
@@ -263,21 +263,13 @@ class ZSSR:
         # 1. True MSE (only if ground-truth was given), note: this error is before post-processing.
         # Run net on the input to get the output super-resolution (almost final result, only post-processing needed)
         self.sr = self.forward_pass(self.input)
-        if self.conf.loss == 'mse':
-            self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
-                        if self.gt_per_sf is not None else None)
-        else:
-            self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf * 255 - self.sr)))]
-                        if self.gt_per_sf is not None else None)
-
+        self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
+                    if self.gt_per_sf is not None else None)
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
 
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
-        if self.conf.loss == 'mse':
-            self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
-        else:
-            self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input * 255 - self.reconstruct_output))))
+        self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(self.input - self.reconstruct_output))))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(self.input, self.sf, self.output_shape, self.conf.upscale_method)
@@ -426,7 +418,7 @@ class ZSSR:
             self.out_image_space = plt.subplot(grid[3, 1])
 
             # Activate interactive mode for live plot updating
-            plt.ion()
+            # plt.ion()
 
             # Set some parameters for the plots
             self.loss_plot_space.set_xlabel('step')
@@ -462,3 +454,4 @@ class ZSSR:
         # These line are needed in order to see the graphics at real time
         self.fig.canvas.draw()
         plt.pause(0.01)
+        plt.savefig(os.path.join(self.conf.result_path, 'loss.png'))
