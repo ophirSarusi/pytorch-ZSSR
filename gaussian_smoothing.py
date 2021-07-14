@@ -14,7 +14,7 @@ class GaussianTargetSmoothing(nn.Module):
         kernel_size (int): Size of the gaussian kernel, or number of "classes", default=256.
     """
 
-    def __init__(self, total_pixels, sigma, kernel_size=255):
+    def __init__(self, total_pixels, sigma, kernel_size=101):
         super(GaussianTargetSmoothing, self).__init__()
         # The gaussian kernel is the product of the
         # gaussian function of each dimension.

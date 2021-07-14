@@ -11,6 +11,7 @@ class ImageCrossEntropy(nn.Module):
              im_average: if false, sum is returned instead of mean
         """
         logsoftmax = nn.LogSoftmax(dim=2)
+
         if im_average:
             return torch.mean(torch.sum(-target * logsoftmax(pred), dim=2))
         else:

@@ -14,18 +14,18 @@ class simpleNet(nn.Module):
 
 		out_d = in_d
 		if loss_type == 'ce':
-			out_d = 256
+			out_d = 101
 
-		self.input = nn.Conv2d(in_channels=in_d, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
+		self.input = nn.Conv2d(in_channels=in_d, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
-		self.conv1 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
-		self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
-		self.conv3 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
-		self.conv4 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
-		self.conv5 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
-		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, bias=False)
+		self.conv1 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		self.conv2 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		self.conv3 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		self.conv4 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		self.conv5 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
-		self.output = nn.Conv2d(in_channels=128, out_channels=out_d, kernel_size=3, stride=1, padding=1, bias=False)
+		self.output = nn.Conv2d(in_channels=128, out_channels=out_d, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization

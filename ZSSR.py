@@ -190,8 +190,8 @@ class ZSSR:
             lr_son_input = torch.Tensor(interpolated_lr_son).unsqueeze_(0).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).unsqueeze_(0).unsqueeze_(0)
         else:
-            lr_son_input = torch.Tensor(interpolated_lr_son).permute(2,0,1).unsqueeze_(0)
-            hr_father = torch.Tensor(hr_father).permute(2,0,1).unsqueeze_(0)
+            lr_son_input = torch.Tensor(interpolated_lr_son).permute(2, 0, 1).unsqueeze_(0)
+            hr_father = torch.Tensor(hr_father).permute(2, 0, 1).unsqueeze_(0)
 
         lr_son_input = lr_son_input.requires_grad_()
         
@@ -204,8 +204,8 @@ class ZSSR:
 
         if self.conf.loss_type == 'ce':
             # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
-            hr_father_targets = (hr_father * 255).long()
-            hr_father = nn.functional.one_hot(hr_father_targets.reshape(b, -1), 256).float()  # [1, HW, 256]
+            hr_father_targets = (hr_father * 100).long()
+            hr_father = nn.functional.one_hot(hr_father_targets.reshape(b, -1), 101).float()  # [1, HW, 101]
 
             if self.cuda:
                 hr_father = hr_father.cuda()
@@ -216,7 +216,7 @@ class ZSSR:
                 hr_father = smoother(hr_father)
 
             # loss = criterion(train_output.view(b, -1, 256), hr_father)
-            loss = criterion(train_output.view(b, 256, -1).permute(0, 2, 1), hr_father)
+            loss = criterion(train_output.view(b, 101, -1).permute(0, 2, 1), hr_father)
 
         elif self.conf.loss_type == 'mse':
             loss = criterion(train_output, hr_father)
@@ -229,7 +229,7 @@ class ZSSR:
         if self.conf.loss_type == 'mse':
             return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
-            return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255
+            return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 101
             # return np.clip(np.squeeze(train_output.argmax(dim=1).cpu().detach().numpy()), 0, 1)
 
     def forward_pass(self, lr_son, hr_father_shape=None):
@@ -248,7 +248,7 @@ class ZSSR:
             prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
             prediction_ndarray = np.squeeze(
-                self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255
+                self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 101
 
         if self.conf.rgb_to_lab:
             # concatenate predicted L channel to interpolated input ab channels
