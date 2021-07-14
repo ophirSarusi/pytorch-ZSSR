@@ -7,6 +7,8 @@ from skimage import color
 from configs import Config
 from utils import *
 from simplenet import simpleNet
+from image_cross_entropy import ImageCrossEntropy
+from gaussian_smoothing import GaussianTargetSmoothing
 
 
 class ZSSR:
@@ -182,6 +184,7 @@ class ZSSR:
         # Note: we specify both output_size and scale_factor. best explained by example: say father size is 9 and sf=2,
         # small_son size is 4. if we upscale by sf=2 we get wrong size, if we upscale to size 9 we get wrong sf.
         # The current imresize implementation supports specifying both.
+
         interpolated_lr_son = imresize(lr_son, self.sf, hr_father.shape, self.conf.upscale_method)
         if self.Y:
             lr_son_input = torch.Tensor(interpolated_lr_son).unsqueeze_(0).unsqueeze_(0)
@@ -189,6 +192,7 @@ class ZSSR:
         else:
             lr_son_input = torch.Tensor(interpolated_lr_son).permute(2,0,1).unsqueeze_(0)
             hr_father = torch.Tensor(hr_father).permute(2,0,1).unsqueeze_(0)
+
         lr_son_input = lr_son_input.requires_grad_()
         
         if self.cuda:
@@ -196,9 +200,25 @@ class ZSSR:
             lr_son_input = lr_son_input.cuda()
       
         train_output = self.model(lr_son_input)
+        b, c, h, w = train_output.shape
+
         if self.conf.loss_type == 'ce':
-            hr_father = (255 * hr_father.squeeze(1)).long()  # remove the channel domain for the CE loss and convert to uint8
-        loss = criterion(train_output, hr_father)
+
+            # train_output = train_output.view(b, -1, 256)
+
+            # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
+            hr_father_targets = (hr_father * 255).long()
+            hr_father = nn.functional.one_hot(hr_father_targets.reshape(b, -1), 256).float()  # [1, HW, 256]
+
+            if self.cuda:
+                hr_father = hr_father.cuda()
+            if self.conf.label_smoothing:
+                smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma)
+                if self.cuda:
+                    smoother = smoother.cuda()
+                hr_father = smoother(hr_father)
+
+        loss = criterion(train_output.view(b, -1, 256), hr_father)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -207,7 +227,8 @@ class ZSSR:
         if self.conf.loss_type == 'mse':
             return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
-            return np.clip(np.squeeze(train_output.argmax(dim=1).cpu().detach().numpy()), 0, 1)
+            return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255
+            # return np.clip(np.squeeze(train_output.argmax(dim=1).cpu().detach().numpy()), 0, 1)
 
     def forward_pass(self, lr_son, hr_father_shape=None):
         # First gate for the lr-son into the network is interpolation to the size of the father
@@ -224,7 +245,9 @@ class ZSSR:
         if self.conf.loss_type == 'mse':
             prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
-            prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).argmax(dim=1).cpu().detach().permute(0, 1, 2).numpy()), 0, 1)
+            prediction_ndarray = np.squeeze(
+                self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255
+            # prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).argmax(dim=1).cpu().detach().permute(0, 1, 2).numpy()), 0, 1)
 
         if self.conf.rgb_to_lab:
             # concatenate predicted L channel to interpolated input ab channels
@@ -302,7 +325,7 @@ class ZSSR:
         if self.conf.loss_type == 'mse':
             criterion = nn.MSELoss()
         elif self.conf.loss_type == 'ce':
-            criterion = nn.CrossEntropyLoss()
+            criterion = ImageCrossEntropy()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
         # main training loop

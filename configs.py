@@ -31,7 +31,9 @@ class Config:
 
     # extra params
     rgb_to_lab = True
-    loss_type = 'mse'  # ce or mse
+    loss_type = 'ce'  # ce or mse
+    label_smoothing = True
+    smooth_sigma = 2
 
     # Data augmentation related params
     augment_leave_as_is_probability = 0.05
@@ -43,7 +45,7 @@ class Config:
 
     # params related to test and display
     run_test = True
-    run_test_every = 50
+    run_test_every = 40
     display_every = 20
     name = 'test'
     plot_losses = True
