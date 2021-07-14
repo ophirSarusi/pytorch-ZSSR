@@ -218,7 +218,10 @@ class ZSSR:
                     smoother = smoother.cuda()
                 hr_father = smoother(hr_father)
 
-        loss = criterion(train_output.view(b, -1, 256), hr_father)
+            loss = criterion(train_output.view(b, -1, 256), hr_father)
+        elif self.conf.loss_type == 'mse':
+            loss = criterion(train_output, hr_father)
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
