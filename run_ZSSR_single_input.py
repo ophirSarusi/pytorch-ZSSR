@@ -1,7 +1,7 @@
 import sys
 import os
 import configs
-import ZSSR
+from ZSSR import ZSSRTrainer
 
 
 def main(input_img, ground_truth, kernels, gpu, conf_str, results_path):
@@ -19,7 +19,7 @@ def main(input_img, ground_truth, kernels, gpu, conf_str, results_path):
     conf.result_path = results_path
 
     # Run ZSSR on the image
-    net = ZSSR.ZSSR(input_img, conf, ground_truth, kernels)
+    net = ZSSRTrainer(input_img, conf, ground_truth, kernels)
     net.run()
 
 

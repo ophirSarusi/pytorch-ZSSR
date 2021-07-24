@@ -11,7 +11,7 @@ from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
 
 
-class ZSSR:
+class ZSSRTrainer:
     # Basic current state variables initialization / declaration
     kernel = None
     learning_rate = None
@@ -69,7 +69,9 @@ class ZSSR:
         if self.conf.rgb_to_lab:
             self.input_rgb = input_img if type(input_img) is not str else img.imread(input_img)
             self.input_lab = color.rgb2lab(self.input_rgb)
-            self.input = self.input_lab[:, :, 0] / 100  # get only L channel to feed to the network and normalize between 0 and 1
+
+            # get only L channel to feed to the network and normalize between 0 and 1
+            self.input = self.input_lab[:, :, 0] / 100
 
         else:
             self.input = input_img if type(input_img) is not str else img.imread(input_img)
@@ -84,7 +86,6 @@ class ZSSR:
 
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
-        # downsample kernel custom
 
         # declare model here severs as initial model
         print(f'self.Y: {self.Y}')
@@ -115,8 +116,9 @@ class ZSSR:
             if np.isscalar(sf):
                 sf = [sf, sf]
             self.sf = np.array(sf) / np.array(self.base_sf)
-            self.output_shape = np.uint(np.ceil(np.array(self.input.shape[0:2]) * sf))
+            self.output_shape = np.uint(np.ceil(np.array(self.input.shape[:2]) * sf))
             print('input shape', self.input.shape)
+
             # Initialize network
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
@@ -205,6 +207,7 @@ class ZSSR:
         if self.conf.loss_type == 'ce':
             # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
             hr_father_targets = (hr_father * 100).long()
+            # hr_father_targets = (hr_father * 100).to(torch.float32)
             hr_father = nn.functional.one_hot(hr_father_targets.reshape(b, -1), 101).float()  # [1, HW, 101]
 
             if self.cuda:
@@ -216,10 +219,12 @@ class ZSSR:
                 hr_father = smoother(hr_father)
 
             # loss = criterion(train_output.view(b, -1, 256), hr_father)
-            loss = criterion(train_output.view(b, 101, -1).permute(0, 2, 1), hr_father)
+            loss = criterion(train_output.view(b, c, -1).permute(0, 2, 1), hr_father, temperature=100)
 
         elif self.conf.loss_type == 'mse':
             loss = criterion(train_output, hr_father)
+        else:
+            raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
         optimizer.zero_grad()
         loss.backward()
@@ -229,7 +234,8 @@ class ZSSR:
         if self.conf.loss_type == 'mse':
             return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
-            return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 101
+            # we take the argmax because it is the required value for the output. we divide by 100 to scale the value between 0 and 1 as expected by the output
+            return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 100
             # return np.clip(np.squeeze(train_output.argmax(dim=1).cpu().detach().numpy()), 0, 1)
 
     def forward_pass(self, lr_son, hr_father_shape=None):
@@ -249,6 +255,8 @@ class ZSSR:
         elif self.conf.loss_type == 'ce':
             prediction_ndarray = np.squeeze(
                 self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 101
+        else:
+            raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
         if self.conf.rgb_to_lab:
             # concatenate predicted L channel to interpolated input ab channels
@@ -327,6 +335,8 @@ class ZSSR:
             criterion = nn.MSELoss()
         elif self.conf.loss_type == 'ce':
             criterion = ImageCrossEntropy()
+        else:
+            raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
         # main training loop
