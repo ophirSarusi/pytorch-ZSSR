@@ -6,10 +6,11 @@ from matplotlib.gridspec import GridSpec
 from skimage import color
 from configs import Config
 from utils import *
-from simplenet import simpleNet
+from simplenet import simpleNet, FourierNet
 from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
 
+torch.autograd.set_detect_anomaly(True)
 
 class ZSSRTrainer:
     # Basic current state variables initialization / declaration
@@ -89,7 +90,11 @@ class ZSSRTrainer:
 
         # declare model here severs as initial model
         print(f'self.Y: {self.Y}')
-        self.model = simpleNet(self.Y, self.conf.loss_type)
+
+        if self.conf.network == 'fourier':
+            self.model = FourierNet(self.Y, self.conf.loss_type)
+        else:
+            self.model = simpleNet(self.Y, self.conf.loss_type)
 
         # Build network computational graph
         # self.build_network(conf)
@@ -123,7 +128,10 @@ class ZSSRTrainer:
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
             if self.conf.init_net_for_each_sf:
-                self.model = simpleNet(self.Y, loss_type=self.conf.loss_type)
+                if self.conf.network == 'fourier':
+                    self.model = FourierNet(self.Y, self.conf.loss_type)
+                else:
+                    self.model = simpleNet(self.Y, self.conf.loss_type)
             if self.cuda:
                 self.model = self.model.cuda()
 

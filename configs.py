@@ -6,7 +6,7 @@ class Config:
     # python_path = '/home/yiqunm2/tensorflow/bin/python'
     scale_factors = [[2.0, 2.0]]  # list of pairs (vertical, horizontal) for gradual increments in resolution
     base_change_sfs = []  # list of scales after which the input is changed to be the output (recommended for high sfs)
-    max_iters = 3000
+    max_iters = 500
     min_iters = 256
     min_learning_rate = 9e-6  # this tells the algorithm when to stop (specify lower than the last learning-rate)
     width = 64
@@ -22,21 +22,22 @@ class Config:
     crop_size = 128
     noise_std = 0.0  # adding noise to lr-sons. small for real images, bigger for noisy images and zero for ideal case
     init_net_for_each_sf = False  # for gradual sr- should we optimize from the last sf or initialize each time?
-    cuda = False
+    cuda = True
     # Params concerning learning rate policy
-    learning_rate = 0.001
+    learning_rate = 0.0001
     learning_rate_change_ratio = 1.5  # ratio between STD and slope of linear fit, under which lr is reduced
     learning_rate_policy_check_every = 60
     learning_rate_slope_range = 256
 
     # extra params
     rgb_to_lab = True
-    loss_type = 'ce'  # ce or mse
+    loss_type = 'mse'  # ce or mse
     label_smoothing = True
     smooth_sigma = 2
+    network = 'simple'
 
     # Data augmentation related params
-    augment_leave_as_is_probability = 0.05
+    augment_leave_as_is_probability = 1
     augment_no_interpolate_probability = 0.45
     augment_min_scale = 0.5
     augment_scale_diff_sigma = 0.25
@@ -45,7 +46,7 @@ class Config:
 
     # params related to test and display
     run_test = True
-    run_test_every = 40
+    run_test_every = 10
     display_every = 20
     name = 'test'
     plot_losses = True
