@@ -22,10 +22,10 @@ class Config:
     crop_size = 128
     noise_std = 0.0  # adding noise to lr-sons. small for real images, bigger for noisy images and zero for ideal case
     init_net_for_each_sf = False  # for gradual sr- should we optimize from the last sf or initialize each time?
-    cuda = False
+    cuda = True
     # Params concerning learning rate policy
     learning_rate = 0.001
-    learning_rate_change_ratio = 1.5  # ratio between STD and slope of linear fit, under which lr is reduced
+    learning_rate_change_ratio = 1.1  # ratio between STD and slope of linear fit, under which lr is reduced
     learning_rate_policy_check_every = 60
     learning_rate_slope_range = 256
 
@@ -36,7 +36,7 @@ class Config:
     smooth_sigma = 2
 
     # Data augmentation related params
-    augment_leave_as_is_probability = 0.05
+    augment_leave_as_is_probability = 1
     augment_no_interpolate_probability = 0.45
     augment_min_scale = 0.5
     augment_scale_diff_sigma = 0.25

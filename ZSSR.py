@@ -219,7 +219,7 @@ class ZSSRTrainer:
                 hr_father = smoother(hr_father)
 
             # loss = criterion(train_output.view(b, -1, 256), hr_father)
-            loss = criterion(train_output.view(b, c, -1).permute(0, 2, 1), hr_father, temperature=100)
+            loss = criterion(train_output.view(b, c, -1).permute(0, 2, 1), hr_father, temperature=1)
 
         elif self.conf.loss_type == 'mse':
             loss = criterion(train_output, hr_father)
@@ -253,15 +253,16 @@ class ZSSRTrainer:
         if self.conf.loss_type == 'mse':
             prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
+            tmp = self.model(interpolated_lr_son)
             prediction_ndarray = np.squeeze(
-                self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 101
+                tmp.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy())
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
         if self.conf.rgb_to_lab:
             # concatenate predicted L channel to interpolated input ab channels
             interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:,:,1:]
-            predicted_lab = np.dstack((prediction_ndarray*100, interpolated_ab))
+            predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
             return color.lab2rgb(predicted_lab)
         else:
             return prediction_ndarray
@@ -337,7 +338,7 @@ class ZSSRTrainer:
             criterion = ImageCrossEntropy()
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
 
         # main training loop
         for self.iter in range(self.conf.max_iters):
@@ -393,11 +394,17 @@ class ZSSRTrainer:
             # Rotate 90*k degrees and mirror flip when k>=4
             test_input = np.rot90(self.input, k) if k < 4 else np.fliplr(np.rot90(self.input, k))
 
+            if self.conf.rgb_to_lab:
+                self.input_lab = np.rot90(self.input_lab, k) if k < 4 else np.fliplr(np.rot90(self.input_lab, k))
+
             # Apply network on the rotated input
             tmp_output = self.forward_pass(test_input)
 
             # Undo the rotation for the processed output (mind the opposite order of the flip and the rotation)
             tmp_output = np.rot90(tmp_output, -k) if k < 4 else np.rot90(np.fliplr(tmp_output), -k)
+            if self.conf.rgb_to_lab:
+                self.input_lab = np.rot90(self.input_lab, -k) if k < 4 else np.fliplr(np.rot90(self.input_lab, -k))
+                # self.input = np.rot90(self.input, -k) if k < 4 else np.fliplr(np.rot90(self.input, -k))
 
             # fix SR output with back projection technique for each augmentation
             for bp_iter in range(self.conf.back_projection_iters[self.sf_ind]):
@@ -463,7 +470,7 @@ class ZSSRTrainer:
             self.out_image_space = plt.subplot(grid[3, 1])
 
             # Activate interactive mode for live plot updating
-            plt.ion()
+            # plt.ion()
 
             # Set some parameters for the plots
             self.loss_plot_space.set_xlabel('step')
@@ -497,6 +504,8 @@ class ZSSRTrainer:
         self.hr_father_image_space.imshow(self.hr_father, vmin=0.0, vmax=1.0)
 
         # These line are needed in order to see the graphics at real time
-        self.fig.canvas.draw()
-        plt.pause(0.01)
-        plt.show()
+        # self.fig.canvas.draw()
+        plt.savefig('%s/%s_zssr_%s.png' %
+                           (self.conf.result_path, os.path.basename(self.file_name)[:-4], '_loss'))
+        # plt.pause(0.01)
+        # plt.show()
