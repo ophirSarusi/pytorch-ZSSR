@@ -24,14 +24,14 @@ class Config:
     init_net_for_each_sf = False  # for gradual sr- should we optimize from the last sf or initialize each time?
     cuda = True
     # Params concerning learning rate policy
-    learning_rate = 0.0001
-    learning_rate_change_ratio = 1.5  # ratio between STD and slope of linear fit, under which lr is reduced
+    learning_rate = 0.001
+    learning_rate_change_ratio = 1.1  # ratio between STD and slope of linear fit, under which lr is reduced
     learning_rate_policy_check_every = 60
     learning_rate_slope_range = 256
 
     # extra params
     rgb_to_lab = True
-    loss_type = 'mse'  # ce or mse
+    loss_type = 'ce'  # ce or mse
     label_smoothing = True
     smooth_sigma = 2
     network = 'simple'
@@ -46,7 +46,7 @@ class Config:
 
     # params related to test and display
     run_test = True
-    run_test_every = 10
+    run_test_every = 40
     display_every = 20
     name = 'test'
     plot_losses = True
