@@ -26,7 +26,7 @@ class simpleNet(nn.Module):
 		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
 		self.output = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.fc =  nn.Parameter(torch.normal(0.0, sqrt(2. / 128), size=(128, out_d)), requires_grad=True)
+		self.fc = nn.Parameter(torch.normal(0.0, sqrt(2. / 128), size=(128, out_d)), requires_grad=True)
 		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization
@@ -37,21 +37,21 @@ class simpleNet(nn.Module):
 
 	def forward(self, x):
 		residual = x
-		inputs = self.input(self.relu(x))
+		inputs = self.relu(self.input(x))
 
 		out = inputs
-		out = self.conv1(self.relu(out))
-		out = self.conv2(self.relu(out))
-		out = self.conv3(self.relu(out))
-		out = self.conv4(self.relu(out))
-		out = self.conv5(self.relu(out))
-		out = self.conv6(self.relu(out))
+		out = self.relu(self.conv1(out))
+		out = self.relu(self.conv2(out))
+		out = self.relu(self.conv3(out))
+		out = self.relu(self.conv4(out))
+		out = self.relu(self.conv5(out))
+		out = self.relu(self.conv6(out))
 
-		out = self.output(self.relu(out))
+		out = self.output(out)
+
+		out = torch.add(out, residual)
 
 		out = torch.einsum('bcwh,ck->bkwh', out, self.fc)
-		
-		out = torch.add(out, residual)
 
 		return out
 
@@ -121,5 +121,5 @@ class FourierNet(nn.Module):
 		out = torch.complex(out_real, out_imag)
 
 		out = torch.add(out1, torch.mul(torch.abs(fft.irfft2(out)), self.param))
-		
+
 		return out

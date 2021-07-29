@@ -346,7 +346,7 @@ class ZSSRTrainer:
             criterion = ImageCrossEntropy()
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
         # main training loop
         for self.iter in range(self.conf.max_iters):
@@ -478,7 +478,7 @@ class ZSSRTrainer:
             self.out_image_space = plt.subplot(grid[3, 1])
 
             # Activate interactive mode for live plot updating
-            # plt.ion()
+            plt.ion()
 
             # Set some parameters for the plots
             self.loss_plot_space.set_xlabel('step')
