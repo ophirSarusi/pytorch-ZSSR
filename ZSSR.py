@@ -9,8 +9,10 @@ from utils import *
 from simplenet import simpleNet, FourierNet
 from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
+from skimage.metrics import structural_similarity as ssim
 
 torch.autograd.set_detect_anomaly(True)
+
 
 class ZSSRTrainer:
     # Basic current state variables initialization / declaration
@@ -38,10 +40,14 @@ class ZSSRTrainer:
     mse_rec = []
     interp_rec_mse = []
     interp_mse = []
+    ssim = []
+    ssim_rec = []
+    interp_rec_ssim = []
+    interp_ssim = []
     mse_steps = []
     loss = []
     learning_rate_change_iter_nums = []
-    fig = None
+    fig = {}
 
     # Network tensors (all tensors end with _t to distinguish)
     learning_rate_t = None
@@ -55,11 +61,11 @@ class ZSSRTrainer:
     init_op = None
 
     # Parameters related to plotting and graphics
-    plots = None
-    loss_plot_space = None
-    lr_son_image_space = None
-    hr_father_image_space = None
-    out_image_space = None
+    plots = {}
+    loss_plot_space = {}
+    lr_son_image_space = {}
+    hr_father_image_space = {}
+    out_image_space = {}
 
     def __init__(self, input_img, conf=Config(), ground_truth=None, kernels=None):
         # Acquire meta parameters configuration from configuration class as a class variable
@@ -168,8 +174,9 @@ class ZSSRTrainer:
         # no need to init weight, done as model declaration
         # Initialize all counters etc
         # no need to change. For record here
-        self.loss = [None] * self.conf.max_iters 
+        self.loss = [None] * self.conf.max_iters
         self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse, self.mse_steps = [], [], [], [], []
+        self.ssim, self.ssim_rec, self.interp_ssim, self.interp_rec_ssim = [], [], [], []
         self.iter = 0
         self.learning_rate = self.conf.learning_rate
         self.learning_rate_change_iter_nums = [0]
@@ -204,11 +211,11 @@ class ZSSRTrainer:
             hr_father = torch.Tensor(hr_father).permute(2, 0, 1).unsqueeze_(0)
 
         lr_son_input = lr_son_input.requires_grad_()
-        
+
         if self.cuda:
             hr_father = hr_father.cuda()
             lr_son_input = lr_son_input.cuda()
-      
+
         train_output = self.model(lr_son_input)
         b, c, h, w = train_output.shape
 
@@ -240,7 +247,7 @@ class ZSSRTrainer:
         self.loss[self.iter] = loss
 
         if self.conf.loss_type == 'mse':
-            return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
+            return np.clip(np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
             # we take the argmax because it is the required value for the output. we divide by 100 to scale the value between 0 and 1 as expected by the output
             return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 100
@@ -252,14 +259,15 @@ class ZSSRTrainer:
         if self.Y:
             interpolated_lr_son = (torch.Tensor(interpolated_lr_son)).unsqueeze_(0).unsqueeze_(0)
         else:
-            interpolated_lr_son = (torch.Tensor(interpolated_lr_son).permute(2,0,1)).unsqueeze_(0)
+            interpolated_lr_son = (torch.Tensor(interpolated_lr_son).permute(2, 0, 1)).unsqueeze_(0)
         if self.cuda:
             interpolated_lr_son = interpolated_lr_son.cuda()
         # Create feed dict
 
         # Run network
         if self.conf.loss_type == 'mse':
-            prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
+            prediction_ndarray = np.clip(
+                np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
             tmp = self.model(interpolated_lr_son)
             prediction_ndarray = np.squeeze(
@@ -269,7 +277,7 @@ class ZSSRTrainer:
 
         if self.conf.rgb_to_lab:
             # concatenate predicted L channel to interpolated input ab channels
-            interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:,:,1:]
+            interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:, :, 1:]
             predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
             return color.lab2rgb(predicted_lab)
         else:
@@ -295,7 +303,7 @@ class ZSSRTrainer:
 
             # Determine learning rate maintaining or reduction by the ration between slope and noise
             if -self.conf.learning_rate_change_ratio * slope < std:
-                self.learning_rate /= 10
+                self.learning_rate /= 2
                 print("learning rate updated: ", self.learning_rate)
 
                 # Keep track of learning rate changes for plotting purposes
@@ -312,31 +320,39 @@ class ZSSRTrainer:
         self.sr = self.forward_pass(self.input)
         self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
                     if self.gt_per_sf is not None else None)
+        self.ssim = (self.ssim +
+                     [ssim(self.gt_per_sf, self.sr, multichannel=True)] if self.gt_per_sf is not None else None)
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
         self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(rgb_input - self.reconstruct_output))))
+        self.ssim_rec.append(ssim(rgb_input, self.reconstruct_output, multichannel=True))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(rgb_input, self.sf, self.output_shape, self.conf.upscale_method)
         self.interp_mse = (self.interp_mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - interp_sr)))]
                            if self.gt_per_sf is not None else None)
+        self.interp_ssim = (self.interp_ssim + [ssim(self.gt_per_sf, interp_sr, multichannel=True)]
+                            if self.gt_per_sf is not None else None)
 
         # 4. Reconstruction MSE of simple interpolation over downscaled input
         interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2], self.conf.upscale_method)
         self.interp_rec_mse.append(np.mean(np.ndarray.flatten(np.square(rgb_input - interp_rec))))
+        self.interp_rec_ssim.append(ssim(rgb_input, interp_rec, multichannel=True))
 
         # Track the iters in which tests are made for the graphics x axis
         self.mse_steps.append(self.iter)
 
         # Display test results if indicated
         if self.conf.display_test_results:
-            print('iteration: ', self.iter, 'reconstruct mse:', self.mse_rec[-1], ', true mse:', (self.mse[-1]
-                                                                                                  if self.mse else None))
+            print('iteration: ', self.iter, 'reconstruct mse:', self.mse_rec[-1],
+                  ', true mse:', (self.mse[-1] if self.mse else None),
+                  'reconstruct ssim:', self.ssim_rec[-1], ', true ssim:', (self.ssim[-1] if self.ssim else None))
 
         # plot losses if needed
         if self.conf.plot_losses:
-            self.plot()
+            self.plot(metric_type='mse')
+            # self.plot(metric_type='ssim')
 
     def train(self):
         # define loss and optimizer
@@ -357,7 +373,8 @@ class ZSSRTrainer:
                                             leave_as_is_probability=self.conf.augment_leave_as_is_probability,
                                             no_interpolate_probability=self.conf.augment_no_interpolate_probability,
                                             min_scale=self.conf.augment_min_scale,
-                                            max_scale=([1.0] + self.conf.scale_factors)[len(self.hr_fathers_sources)-1],
+                                            max_scale=([1.0] + self.conf.scale_factors)[
+                                                len(self.hr_fathers_sources) - 1],
                                             allow_rotation=self.conf.augment_allow_rotation,
                                             scale_diff_sigma=self.conf.augment_scale_diff_sigma,
                                             shear_sigma=self.conf.augment_shear_sigma,
@@ -372,7 +389,7 @@ class ZSSRTrainer:
 
             # Display info and save weights
             if not self.iter % self.conf.display_every:
-                print('sf:', self.sf*self.base_sf, ', iteration: ', self.iter, ', loss: ', self.loss[self.iter])
+                print('sf:', self.sf * self.base_sf, ', iteration: ', self.iter, ', loss: ', self.loss[self.iter])
 
             # Test network
             if self.conf.run_test and (not self.iter % self.conf.run_test_every):
@@ -380,6 +397,8 @@ class ZSSRTrainer:
 
             # Consider changing learning rate or stop according to iteration number and losses slope
             self.learning_rate_policy()
+            for g in optimizer.param_groups:
+                g['lr'] = self.learning_rate
 
             # stop when minimum learning rate was passed
             if self.learning_rate < self.conf.min_learning_rate:
@@ -449,7 +468,6 @@ class ZSSRTrainer:
         # Change base input image if required (this means current output becomes the new input)
         if abs(self.conf.scale_factors[self.sf_ind] - self.conf.base_change_sfs[self.base_ind]) < 0.001:
             if len(self.conf.base_change_sfs) > self.base_ind:
-
                 # The new input is the current output
                 self.input = self.final_sr
 
@@ -461,59 +479,71 @@ class ZSSRTrainer:
 
             print('base changed to %.2f' % self.base_sf)
 
-    def plot(self):
-        plots_data, labels = zip(*[(np.array(x), l) for (x, l)
-                                   in zip([self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse],
-                                          ['True MSE', 'Reconstruct MSE', 'Bicubic to ground truth MSE',
-                                           'Bicubic to reconstruct MSE']) if x is not None])
+    def plot(self, metric_type='mse'):
+        if metric_type == 'mse':
+            plots_data, labels = zip(*[(np.array(x), l) for (x, l)
+                                       in zip([self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse],
+                                              ['True MSE', 'Reconstruct MSE', 'Bicubic to ground truth MSE',
+                                               'Bicubic to reconstruct MSE']) if x is not None])
+        elif metric_type == 'ssim':
+            plots_data, labels = zip(*[(np.array(x), l) for (x, l)
+                                       in zip([self.ssim, self.ssim_rec, self.interp_ssim, self.interp_rec_ssim],
+                                              ['True SSIM', 'Reconstruct SSIM', 'Bicubic to ground truth SSIM',
+                                               'Bicubic to reconstruct SSIM']) if x is not None])
+        else:
+            raise NotImplementedError(f'unknown metric type: {metric_type}')
 
         # For the first iteration create the figure
         if not self.iter:
             # Create figure and split it using GridSpec. Name each region as needed
-            self.fig = plt.figure(figsize=(9.5, 9))
+            self.fig[metric_type] = plt.figure(figsize=(9.5, 9))
             grid = GridSpec(4, 4)
-            self.loss_plot_space = plt.subplot(grid[:-1, :])
-            self.lr_son_image_space = plt.subplot(grid[3, 0])
-            self.hr_father_image_space = plt.subplot(grid[3, 3])
-            self.out_image_space = plt.subplot(grid[3, 1])
+            self.loss_plot_space[metric_type] = plt.subplot(grid[:-1, :])
+            self.lr_son_image_space[metric_type] = plt.subplot(grid[3, 0])
+            self.hr_father_image_space[metric_type] = plt.subplot(grid[3, 3])
+            self.out_image_space[metric_type] = plt.subplot(grid[3, 1])
 
             # Activate interactive mode for live plot updating
             plt.ion()
 
             # Set some parameters for the plots
-            self.loss_plot_space.set_xlabel('step')
-            self.loss_plot_space.set_ylabel('MSE')
-            self.loss_plot_space.grid(True)
-            self.loss_plot_space.set_yscale('log')
-            self.loss_plot_space.legend()
-            self.plots = [None] * 4
+            self.loss_plot_space[metric_type].set_xlabel('step')
+            self.loss_plot_space[metric_type].set_ylabel(metric_type)
+            self.loss_plot_space[metric_type].grid(True)
+            if metric_type == 'mse':
+                self.loss_plot_space[metric_type].set_yscale('log')
+            self.loss_plot_space[metric_type].legend()
+            self.plots[metric_type] = [None] * 4
 
             # loop over all needed plot types. if some data is none than skip, if some data is one value tile it
-            self.plots = self.loss_plot_space.plot(*[[0]] * 2 * len(plots_data))
+            self.plots[metric_type] = self.loss_plot_space[metric_type].plot(*[[0]] * 2 * len(plots_data))
 
         # Update plots
-        for plot, plot_data in zip(self.plots, plots_data):
+        for plot, plot_data in zip(self.plots[metric_type], plots_data):
             plot.set_data(self.mse_steps, plot_data)
 
-            self.loss_plot_space.set_xlim([0, self.iter + 1])
+            self.loss_plot_space[metric_type].set_xlim([0, self.iter + 1])
             all_losses = np.array(plots_data)
-            self.loss_plot_space.set_ylim([np.min(all_losses)*0.9, np.max(all_losses)*1.1])
+            self.loss_plot_space[metric_type].set_ylim([np.min(all_losses) * 0.9, np.max(all_losses) * 1.1])
 
         # Mark learning rate changes
         for iter_num in self.learning_rate_change_iter_nums:
-            self.loss_plot_space.axvline(iter_num)
+            self.loss_plot_space[metric_type].axvline(iter_num)
 
         # Add legend to graphics
-        self.loss_plot_space.legend(labels)
+        self.loss_plot_space[metric_type].legend(labels)
 
         # Show current input and output images
-        self.lr_son_image_space.imshow(self.lr_son, vmin=0.0, vmax=1.0)
-        self.out_image_space.imshow(self.train_output, vmin=0.0, vmax=1.0)
-        self.hr_father_image_space.imshow(self.hr_father, vmin=0.0, vmax=1.0)
+        self.lr_son_image_space[metric_type].imshow(self.lr_son, vmin=0.0, vmax=1.0)
+        self.out_image_space[metric_type].imshow(self.train_output, vmin=0.0, vmax=1.0)
+        self.hr_father_image_space[metric_type].imshow(self.hr_father, vmin=0.0, vmax=1.0)
 
         # These line are needed in order to see the graphics at real time
+        self.fig[metric_type].canvas.draw()
+        plt.pause(0.01)
+        plt.show()
         # self.fig.canvas.draw()
-        plt.savefig('%s/%s_zssr_%s.png' %
-                           (self.conf.result_path, os.path.basename(self.file_name)[:-4], '_loss'))
+        plt.savefig('%s/%s_zssr_%s_%s.png' %
+                    (self.conf.result_path, os.path.basename(self.file_name)[:-4], '_loss', metric_type))
         # plt.pause(0.01)
         # plt.show()

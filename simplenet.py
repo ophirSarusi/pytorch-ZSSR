@@ -8,6 +8,9 @@ from torch import fft
 class simpleNet(nn.Module):
 	def __init__(self, Y=True, loss_type='mse'):
 		super(simpleNet, self).__init__()
+
+		self.loss_type = loss_type
+
 		in_d = 1
 		if not Y:
 			in_d = 3
@@ -25,8 +28,11 @@ class simpleNet(nn.Module):
 		self.conv5 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
-		self.output = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.fc = nn.Parameter(torch.normal(0.0, sqrt(2. / 128), size=(128, out_d)), requires_grad=True)
+		if self.loss_type == 'ce':
+			self.output = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+			self.fc = nn.Parameter(torch.normal(0.0, sqrt(2. / 128), size=(128, out_d)), requires_grad=True)
+		else:
+			self.output = nn.Conv2d(in_channels=128, out_channels=out_d, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization
@@ -51,7 +57,8 @@ class simpleNet(nn.Module):
 
 		out = torch.add(out, residual)
 
-		out = torch.einsum('bcwh,ck->bkwh', out, self.fc)
+		if self.loss_type == 'ce':
+			out = torch.einsum('bcwh,ck->bkwh', out, self.fc)
 
 		return out
 
