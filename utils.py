@@ -134,8 +134,8 @@ def random_augment(ims,
                      .dot(shift_to_center_mat))
 
     # Apply transformation to image and return the transformed image clipped between 0-1
-    return im
-
+    return np.clip(warpPerspective(im, transform_mat, (crop_size, crop_size), flags=INTER_CUBIC), 0, 1)
+    # return im
 
 def back_projection(y_sr, y_lr, down_kernel, up_kernel, sf=None):
     y_sr += imresize(y_lr - imresize(y_sr,
