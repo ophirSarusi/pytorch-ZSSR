@@ -1,7 +1,9 @@
+import numpy as np
 import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.image as img
+from torchvision import transforms
 from matplotlib.gridspec import GridSpec
 from skimage import color
 from configs import Config
@@ -9,7 +11,7 @@ from utils import *
 from simplenet import simpleNet
 from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
-
+from skimage.measure import compare_ssim as ssim
 
 class ZSSRTrainer:
     # Basic current state variables initialization / declaration
@@ -37,10 +39,14 @@ class ZSSRTrainer:
     mse_rec = []
     interp_rec_mse = []
     interp_mse = []
+    ssim = []
+    ssim_rec = []
+    interp_rec_ssim = []
+    interp_ssim = []
     mse_steps = []
     loss = []
     learning_rate_change_iter_nums = []
-    fig = None
+    fig = {}
 
     # Network tensors (all tensors end with _t to distinguish)
     learning_rate_t = None
@@ -54,11 +60,11 @@ class ZSSRTrainer:
     init_op = None
 
     # Parameters related to plotting and graphics
-    plots = None
-    loss_plot_space = None
-    lr_son_image_space = None
-    hr_father_image_space = None
-    out_image_space = None
+    plots = {}
+    loss_plot_space = {}
+    lr_son_image_space = {}
+    hr_father_image_space = {}
+    out_image_space = {}
 
     def __init__(self, input_img, conf=Config(), ground_truth=None, kernels=None):
         # Acquire meta parameters configuration from configuration class as a class variable
@@ -75,21 +81,27 @@ class ZSSRTrainer:
 
         else:
             self.input = input_img if type(input_img) is not str else img.imread(input_img)
+            self.n_channels = self.input.shape[-1]
+
+        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
 
         self.Y = False
         if len(self.input.shape) == 2:
             # the image has only one channel
-            self.Y = True
+            # self.Y = True
+            self.n_channels = 1
+            self.input = np.expand_dims(self.input, axis=-1)
+            self.gt = np.expand_dims(self.gt, axis=-1)
 
             # For evaluation purposes, ground-truth image can be supplied.
-        self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
+
 
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
 
         # declare model here severs as initial model
         print(f'self.Y: {self.Y}')
-        self.model = simpleNet(self.Y, self.conf.loss_type)
+        self.models = [simpleNet(self.Y, self.conf.loss_type) for _ in range(self.n_channels)]
 
         # Build network computational graph
         # self.build_network(conf)
@@ -104,6 +116,7 @@ class ZSSRTrainer:
         # We keep the input file name to save the output with a similar name. If array was given rather than path
         # then we use default provided by the configs
         self.file_name = input_img if type(input_img) is str else conf.name
+        print(self.file_name)
 
     def run(self):
         # Run gradually on all scale factors (if only one jump then this loop only happens once)
@@ -123,9 +136,9 @@ class ZSSRTrainer:
             # reinit all for each scale factors, each gradual level
             self.init_parameters()
             if self.conf.init_net_for_each_sf:
-                self.model = simpleNet(self.Y, loss_type=self.conf.loss_type)
+                self.models = [simpleNet(self.Y, self.conf.loss_type) for _ in range(self.n_channels)]
             if self.cuda:
-                self.model = self.model.cuda()
+                self.models = [model.cuda() for model in self.models]
 
             # Train the network
             # should be modified
@@ -144,9 +157,10 @@ class ZSSRTrainer:
             # Save the final output if indicated
             if self.conf.save_results:
                 sf_str = ''.join('X%.2f' % s for s in self.conf.scale_factors[self.sf_ind])
+
                 plt.imsave('%s/%s_zssr_%s.png' %
                            (self.conf.result_path, os.path.basename(self.file_name)[:-4], sf_str),
-                           post_processed_output, vmin=0, vmax=1)
+                           post_processed_output if self.n_channels > 1 else np.squeeze(post_processed_output, -1), vmin=0, vmax=1)
 
             # verbose
             print('** Done training for sf=', sf, ' **')
@@ -160,8 +174,9 @@ class ZSSRTrainer:
         # no need to init weight, done as model declaration
         # Initialize all counters etc
         # no need to change. For record here
-        self.loss = [None] * self.conf.max_iters 
+        self.loss = [None] * self.conf.max_iters
         self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse, self.mse_steps = [], [], [], [], []
+        self.ssim, self.ssim_rec, self.interp_ssim, self.interp_rec_ssim = [], [], [], []
         self.iter = 0
         self.learning_rate = self.conf.learning_rate
         self.learning_rate_change_iter_nums = [0]
@@ -200,42 +215,48 @@ class ZSSRTrainer:
         if self.cuda:
             hr_father = hr_father.cuda()
             lr_son_input = lr_son_input.cuda()
-      
-        train_output = self.model(lr_son_input)
-        b, c, h, w = train_output.shape
+
+        train_outputs = [self.models[i](lr_son_input[:,i,:,:].unsqueeze(0)) for i in range(self.n_channels)]
+        b, c, h, w = train_outputs[0].shape
 
         if self.conf.loss_type == 'ce':
             # change targets (pixels) to one hot vectors and if enabled apply smoothing to the one-hot vectors.
-            hr_father_targets = (hr_father * 100).long()
-            # hr_father_targets = (hr_father * 100).to(torch.float32)
-            hr_father = nn.functional.one_hot(hr_father_targets.reshape(b, -1), 101).float()  # [1, HW, 101]
+            losses = []
+            for ch in range(self.n_channels):
+                hr_father_targets = (hr_father[:,ch,:,:].unsqueeze(0) * 255).long()
+                # hr_father_targets = (hr_father * 100).to(torch.float32)
+                hr_father_ch = nn.functional.one_hot(hr_father_targets.reshape(b, -1), 256).float()  # [1, HW, 101]
 
-            if self.cuda:
-                hr_father = hr_father.cuda()
-            if self.conf.label_smoothing:
-                smoother = GaussianTargetSmoothing(hr_father.size(1), self.conf.smooth_sigma)
                 if self.cuda:
-                    smoother = smoother.cuda()
-                hr_father = smoother(hr_father)
+                    hr_father_ch = hr_father_ch.cuda()
+                if self.conf.label_smoothing:
+                    smoother = GaussianTargetSmoothing(hr_father_ch.size(1), self.conf.smooth_sigma)
+                    if self.cuda:
+                        smoother = smoother.cuda()
+                    hr_father_ch = smoother(hr_father_ch)
 
-            # loss = criterion(train_output.view(b, -1, 256), hr_father)
-            loss = criterion(train_output.view(b, c, -1).permute(0, 2, 1), hr_father, temperature=1)
+                # loss = criterion(train_output.view(b, -1, 256), hr_father)
+                loss = criterion(train_outputs[ch].view(b, c, -1).permute(0, 2, 1), hr_father_ch, temperature=1)
+                losses.append(loss)
 
         elif self.conf.loss_type == 'mse':
             loss = criterion(train_output, hr_father)
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        self.loss[self.iter] = loss
+        for ch in range(self.n_channels):
+            optimizer[ch].zero_grad()
+            losses[ch].backward()
+            optimizer[ch].step()
+            self.loss[self.iter] = loss
 
         if self.conf.loss_type == 'mse':
             return np.clip(np.squeeze(train_output.cpu().detach().numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
             # we take the argmax because it is the required value for the output. we divide by 100 to scale the value between 0 and 1 as expected by the output
-            return np.squeeze(train_output.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 100
+            outputs_nd = [np.squeeze(
+                o.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255 for o in train_outputs]
+            return np.dstack(outputs_nd)
             # return np.clip(np.squeeze(train_output.argmax(dim=1).cpu().detach().numpy()), 0, 1)
 
     def forward_pass(self, lr_son, hr_father_shape=None):
@@ -253,9 +274,9 @@ class ZSSRTrainer:
         if self.conf.loss_type == 'mse':
             prediction_ndarray = np.clip(np.squeeze(self.model(interpolated_lr_son).cpu().detach().permute(0, 2, 3, 1).numpy()), 0, 1)
         elif self.conf.loss_type == 'ce':
-            tmp = self.model(interpolated_lr_son)
-            prediction_ndarray = np.squeeze(
-                tmp.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy())
+            outputs = [self.models[i](interpolated_lr_son[:,i,:,:].unsqueeze(0)) for i in range(self.n_channels)]
+            prediction_ndarrays = [np.squeeze(
+                o.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()) / 255 for o in outputs]
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
@@ -265,7 +286,7 @@ class ZSSRTrainer:
             predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
             return color.lab2rgb(predicted_lab)
         else:
-            return prediction_ndarray
+            return np.dstack(prediction_ndarrays)
 
     def learning_rate_policy(self):
         # fit linear curve and check slope to determine whether to do nothing, reduce learning rate or finish
@@ -293,6 +314,7 @@ class ZSSRTrainer:
                 # Keep track of learning rate changes for plotting purposes
                 self.learning_rate_change_iter_nums.append(self.iter)
 
+
     def quick_test(self):
 
         rgb_input = self.input_rgb if self.conf.rgb_to_lab else self.input
@@ -304,31 +326,42 @@ class ZSSRTrainer:
         self.sr = self.forward_pass(self.input)
         self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
                     if self.gt_per_sf is not None else None)
+        self.ssim = (self.ssim +
+                     [ssim(self.gt_per_sf, self.sr, multichannel=True)] if self.gt_per_sf is not None else None)
 
         # 2. Reconstruction MSE, run for reconstruction- try to reconstruct the input from a downscaled version of it
         self.reconstruct_output = self.forward_pass(self.father_to_son(self.input), self.input.shape)
         self.mse_rec.append(np.mean(np.ndarray.flatten(np.square(rgb_input - self.reconstruct_output))))
+        self.ssim_rec.append(ssim(rgb_input, self.reconstruct_output, multichannel=True))
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(rgb_input, self.sf, self.output_shape, self.conf.upscale_method)
         self.interp_mse = (self.interp_mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - interp_sr)))]
                            if self.gt_per_sf is not None else None)
+        self.interp_ssim = (self.interp_ssim + [ssim(self.gt_per_sf, interp_sr, multichannel=True)]
+                            if self.gt_per_sf is not None else None)
 
         # 4. Reconstruction MSE of simple interpolation over downscaled input
-        interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2], self.conf.upscale_method)
+        interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2],
+                              self.conf.upscale_method)
         self.interp_rec_mse.append(np.mean(np.ndarray.flatten(np.square(rgb_input - interp_rec))))
+        self.interp_rec_ssim.append(ssim(rgb_input, interp_rec, multichannel=True))
 
         # Track the iters in which tests are made for the graphics x axis
         self.mse_steps.append(self.iter)
 
         # Display test results if indicated
         if self.conf.display_test_results:
-            print('iteration: ', self.iter, 'reconstruct mse:', self.mse_rec[-1], ', true mse:', (self.mse[-1]
-                                                                                                  if self.mse else None))
+            print('iteration: ', self.iter, 'reconstruct mse:', self.mse_rec[-1],
+                  ', true mse:', (self.mse[-1] if self.mse else None),
+                  'reconstruct ssim:', self.ssim_rec[-1], ', true ssim:', (self.ssim[-1] if self.ssim else None))
 
         # plot losses if needed
         if self.conf.plot_losses:
-            self.plot()
+            # self.plot(metric_type='mse')
+            self.plot(metric_type='ssim')
+
+
 
     def train(self):
         # define loss and optimizer
@@ -338,12 +371,18 @@ class ZSSRTrainer:
             criterion = ImageCrossEntropy()
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-4)
+        optimizers = [torch.optim.Adam(model.parameters(), lr=self.learning_rate, weight_decay=1e-5) for model in self.models]
 
         # main training loop
         for self.iter in range(self.conf.max_iters):
             # Use augmentation from original input image to create current father.
             # If other scale factors were applied before, their result is also used (hr_fathers_in)
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.RandomCrop(self.conf.crop_size),
+                transforms.RandomHorizontalFlip(0.2),
+                transforms.RandomVerticalFlip(0.2),
+            ])
             self.hr_father = random_augment(ims=self.hr_fathers_sources,
                                             base_scales=[1.0] + self.conf.scale_factors,
                                             leave_as_is_probability=self.conf.augment_leave_as_is_probability,
@@ -355,16 +394,21 @@ class ZSSRTrainer:
                                             shear_sigma=self.conf.augment_shear_sigma,
                                             crop_size=self.conf.crop_size)
 
+            # self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
+
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
             # should convert input and output to torch tensor
 
             # run network forward and back propagation, one iteration (This is the heart of the training)
-            self.train_output = self.forward_backward_pass(self.lr_son, self.hr_father, criterion, optimizer)
+            self.train_output = self.forward_backward_pass(self.lr_son, self.hr_father, criterion, optimizers)
 
             # Display info and save weights
             if not self.iter % self.conf.display_every:
                 print('sf:', self.sf*self.base_sf, ', iteration: ', self.iter, ', loss: ', self.loss[self.iter])
+                for optim in optimizers:
+                    for g in optim.param_groups:
+                        g['lr'] = self.learning_rate
 
             # Test network
             if self.conf.run_test and (not self.iter % self.conf.run_test_every):
@@ -417,7 +461,7 @@ class ZSSRTrainer:
             outputs.append(tmp_output)
 
         # Take the median over all 8 outputs
-        almost_final_sr = np.median(outputs, 0)
+        almost_final_sr = np.mean(outputs, 0)
 
         # Again back projection for the final fused result
         for bp_iter in range(self.conf.back_projection_iters[self.sf_ind]):
@@ -453,59 +497,71 @@ class ZSSRTrainer:
 
             print('base changed to %.2f' % self.base_sf)
 
-    def plot(self):
-        plots_data, labels = zip(*[(np.array(x), l) for (x, l)
-                                   in zip([self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse],
-                                          ['True MSE', 'Reconstruct MSE', 'Bicubic to ground truth MSE',
-                                           'Bicubic to reconstruct MSE']) if x is not None])
+    def plot(self, metric_type='mse'):
+        if metric_type == 'mse':
+            plots_data, labels = zip(*[(np.array(x), l) for (x, l)
+                                       in zip([self.mse, self.mse_rec, self.interp_mse, self.interp_rec_mse],
+                                              ['True MSE', 'Reconstruct MSE', 'Bicubic to ground truth MSE',
+                                               'Bicubic to reconstruct MSE']) if x is not None])
+        elif metric_type == 'ssim':
+            plots_data, labels = zip(*[(np.array(x), l) for (x, l)
+                                       in zip([self.ssim, self.ssim_rec, self.interp_ssim, self.interp_rec_ssim],
+                                              ['True SSIM', 'Reconstruct SSIM', 'Bicubic to ground truth SSIM',
+                                               'Bicubic to reconstruct SSIM']) if x is not None])
+        else:
+            raise NotImplementedError(f'unknown metric type: {metric_type}')
 
         # For the first iteration create the figure
         if not self.iter:
             # Create figure and split it using GridSpec. Name each region as needed
-            self.fig = plt.figure(figsize=(9.5, 9))
+            self.fig[metric_type] = plt.figure(figsize=(9.5, 9))
             grid = GridSpec(4, 4)
-            self.loss_plot_space = plt.subplot(grid[:-1, :])
-            self.lr_son_image_space = plt.subplot(grid[3, 0])
-            self.hr_father_image_space = plt.subplot(grid[3, 3])
-            self.out_image_space = plt.subplot(grid[3, 1])
+            self.loss_plot_space[metric_type] = plt.subplot(grid[:-1, :])
+            self.lr_son_image_space[metric_type] = plt.subplot(grid[3, 0])
+            self.hr_father_image_space[metric_type] = plt.subplot(grid[3, 3])
+            self.out_image_space[metric_type] = plt.subplot(grid[3, 1])
 
             # Activate interactive mode for live plot updating
             # plt.ion()
 
             # Set some parameters for the plots
-            self.loss_plot_space.set_xlabel('step')
-            self.loss_plot_space.set_ylabel('MSE')
-            self.loss_plot_space.grid(True)
-            self.loss_plot_space.set_yscale('log')
-            self.loss_plot_space.legend()
-            self.plots = [None] * 4
+            self.loss_plot_space[metric_type].set_xlabel('step')
+            self.loss_plot_space[metric_type].set_ylabel(metric_type)
+            self.loss_plot_space[metric_type].grid(True)
+            if metric_type == 'mse':
+                self.loss_plot_space[metric_type].set_yscale('log')
+            self.loss_plot_space[metric_type].legend()
+            self.plots[metric_type] = [None] * 4
 
             # loop over all needed plot types. if some data is none than skip, if some data is one value tile it
-            self.plots = self.loss_plot_space.plot(*[[0]] * 2 * len(plots_data))
+            self.plots[metric_type] = self.loss_plot_space[metric_type].plot(*[[0]] * 2 * len(plots_data))
 
         # Update plots
-        for plot, plot_data in zip(self.plots, plots_data):
+        for plot, plot_data in zip(self.plots[metric_type], plots_data):
             plot.set_data(self.mse_steps, plot_data)
 
-            self.loss_plot_space.set_xlim([0, self.iter + 1])
+            self.loss_plot_space[metric_type].set_xlim([0, self.iter + 1])
             all_losses = np.array(plots_data)
-            self.loss_plot_space.set_ylim([np.min(all_losses)*0.9, np.max(all_losses)*1.1])
+            self.loss_plot_space[metric_type].set_ylim([np.min(all_losses) * 0.9, np.max(all_losses) * 1.1])
 
         # Mark learning rate changes
         for iter_num in self.learning_rate_change_iter_nums:
-            self.loss_plot_space.axvline(iter_num)
+            self.loss_plot_space[metric_type].axvline(iter_num)
 
         # Add legend to graphics
-        self.loss_plot_space.legend(labels)
+        self.loss_plot_space[metric_type].legend(labels)
 
         # Show current input and output images
-        self.lr_son_image_space.imshow(self.lr_son, vmin=0.0, vmax=1.0)
-        self.out_image_space.imshow(self.train_output, vmin=0.0, vmax=1.0)
-        self.hr_father_image_space.imshow(self.hr_father, vmin=0.0, vmax=1.0)
+        # self.lr_son_image_space[metric_type].imshow(self.lr_son, vmin=0.0, vmax=1.0)
+        # self.out_image_space[metric_type].imshow(self.train_output, vmin=0.0, vmax=1.0)
+        # self.hr_father_image_space[metric_type].imshow(self.hr_father, vmin=0.0, vmax=1.0)
 
         # These line are needed in order to see the graphics at real time
+        self.fig[metric_type].canvas.draw()
+        # plt.pause(0.01)
+        # plt.show()
         # self.fig.canvas.draw()
-        plt.savefig('%s/%s_zssr_%s.png' %
-                           (self.conf.result_path, os.path.basename(self.file_name)[:-4], '_loss'))
+        plt.savefig('%s/%s_zssr_%s_%s.png' %
+                    (self.conf.result_path, os.path.basename(self.file_name)[:-4], '_loss', metric_type))
         # plt.pause(0.01)
         # plt.show()

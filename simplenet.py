@@ -10,11 +10,11 @@ class simpleNet(nn.Module):
 		super(simpleNet, self).__init__()
 		in_d = 1
 		if not Y:
-			in_d = 3
+			in_d = 1
 
 		out_d = in_d
 		if loss_type == 'ce':
-			out_d = 101
+			out_d = 256
 
 		self.input = nn.Conv2d(in_channels=in_d, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
@@ -26,7 +26,7 @@ class simpleNet(nn.Module):
 		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
 		self.output = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.fc =  nn.Parameter(torch.normal(0.0, sqrt(2. / 128), size=(128, out_d)), requires_grad=True)
+		self.final = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=1, stride=1, padding=0, bias=True)
 		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization
@@ -48,9 +48,12 @@ class simpleNet(nn.Module):
 		out = self.conv6(self.relu(out))
 
 		out = self.output(self.relu(out))
-
-		out = torch.einsum('bcwh,ck->bkwh', out, self.fc)
-		
 		out = torch.add(out, residual)
+		out = self.final(self.relu(out))
+
+
+		# out = torch.einsum('bcwh,ck->bkwh', out, self.fc)
+		
+
 
 		return out

@@ -8,7 +8,7 @@ class Config:
     base_change_sfs = []  # list of scales after which the input is changed to be the output (recommended for high sfs)
     max_iters = 3000
     min_iters = 256
-    min_learning_rate = 9e-6  # this tells the algorithm when to stop (specify lower than the last learning-rate)
+    min_learning_rate = 9e-7  # this tells the algorithm when to stop (specify lower than the last learning-rate)
     width = 64
     depth = 8
     output_flip = True  # geometric self-ensemble (see paper)
@@ -25,18 +25,18 @@ class Config:
     cuda = True
     # Params concerning learning rate policy
     learning_rate = 0.001
-    learning_rate_change_ratio = 1.1  # ratio between STD and slope of linear fit, under which lr is reduced
-    learning_rate_policy_check_every = 60
+    learning_rate_change_ratio = 1.05  # ratio between STD and slope of linear fit, under which lr is reduced
+    learning_rate_policy_check_every = 30
     learning_rate_slope_range = 256
 
     # extra params
-    rgb_to_lab = True
+    rgb_to_lab = False
     loss_type = 'ce'  # ce or mse
-    label_smoothing = True
-    smooth_sigma = 2
+    label_smoothing = False
+    smooth_sigma = 1
 
     # Data augmentation related params
-    augment_leave_as_is_probability = 1
+    augment_leave_as_is_probability = 0.05
     augment_no_interpolate_probability = 0.45
     augment_min_scale = 0.5
     augment_scale_diff_sigma = 0.25
@@ -76,6 +76,8 @@ X2_ONE_JUMP_IDEAL_CONF.input_path = os.path.dirname(__file__) + '/set14'
 # Same as above but with visualization (Recommended for one image, interactive mode, for debugging)
 X2_IDEAL_WITH_PLOT_CONF = Config()
 X2_IDEAL_WITH_PLOT_CONF.plot_losses = True
+X2_IDEAL_WITH_PLOT_CONF.scale_factors = [[1.0, 1.5], [1.5, 1.0], [1.5, 1.5], [1.5, 2.0], [2.0, 1.5], [2.0, 2.0]]
+X2_IDEAL_WITH_PLOT_CONF.back_projection_iters = [6, 6, 8, 10, 10, 12]
 X2_IDEAL_WITH_PLOT_CONF.run_test_every = 20
 X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/example_with_gt'
 # X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/test_data'
@@ -84,7 +86,7 @@ X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/example_with_
 X2_GRADUAL_IDEAL_CONF = Config()
 X2_GRADUAL_IDEAL_CONF.scale_factors = [[1.0, 1.5], [1.5, 1.0], [1.5, 1.5], [1.5, 2.0], [2.0, 1.5], [2.0, 2.0]]
 X2_GRADUAL_IDEAL_CONF.back_projection_iters = [6, 6, 8, 10, 10, 12]
-X2_GRADUAL_IDEAL_CONF.input_path = os.path.dirname(__file__) + '/set14'
+X2_GRADUAL_IDEAL_CONF.input_path = os.path.dirname(__file__) + '/set14_with_gt'
 
 # Applying a given kernel. Rotations are canceled sense kernel may be non-symmetric
 X2_GIVEN_KERNEL_CONF = Config()
