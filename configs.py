@@ -32,8 +32,8 @@ class Config:
     # extra params
     rgb_to_lab = False
     loss_type = 'ce'  # ce or mse
-    label_smoothing = False
-    smooth_sigma = 1
+    label_smoothing = True
+    smooth_sigma = 2
 
     # Data augmentation related params
     augment_leave_as_is_probability = 0.05

@@ -380,8 +380,8 @@ class ZSSRTrainer:
             transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.RandomCrop(self.conf.crop_size),
-                transforms.RandomHorizontalFlip(0.2),
-                transforms.RandomVerticalFlip(0.2),
+                transforms.RandomHorizontalFlip(0.8),
+                transforms.RandomVerticalFlip(0.8),
             ])
             self.hr_father = random_augment(ims=self.hr_fathers_sources,
                                             base_scales=[1.0] + self.conf.scale_factors,
@@ -394,7 +394,7 @@ class ZSSRTrainer:
                                             shear_sigma=self.conf.augment_shear_sigma,
                                             crop_size=self.conf.crop_size)
 
-            # self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
+            self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
 
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
@@ -552,9 +552,9 @@ class ZSSRTrainer:
         self.loss_plot_space[metric_type].legend(labels)
 
         # Show current input and output images
-        # self.lr_son_image_space[metric_type].imshow(self.lr_son, vmin=0.0, vmax=1.0)
-        # self.out_image_space[metric_type].imshow(self.train_output, vmin=0.0, vmax=1.0)
-        # self.hr_father_image_space[metric_type].imshow(self.hr_father, vmin=0.0, vmax=1.0)
+        self.lr_son_image_space[metric_type].imshow(self.lr_son, vmin=0.0, vmax=1.0)
+        self.out_image_space[metric_type].imshow(self.train_output, vmin=0.0, vmax=1.0)
+        self.hr_father_image_space[metric_type].imshow(self.hr_father, vmin=0.0, vmax=1.0)
 
         # These line are needed in order to see the graphics at real time
         self.fig[metric_type].canvas.draw()
