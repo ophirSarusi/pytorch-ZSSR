@@ -394,7 +394,7 @@ class ZSSRTrainer:
                                             shear_sigma=self.conf.augment_shear_sigma,
                                             crop_size=self.conf.crop_size)
 
-            self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
+            # self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
 
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
