@@ -8,7 +8,7 @@ import sys
 import run_ZSSR_single_input
 
 
-def main(conf_name, gpu):
+def main(conf_name, gpu, in_file):
     # Initialize configs and prepare result dir with date
     print(conf_name)
     if conf_name is None:
@@ -18,7 +18,7 @@ def main(conf_name, gpu):
         namespace = {'conf': None}
         conf = eval('configs.%s' % conf_name)
 
-    res_dir = prepare_result_dir(conf)
+    res_dir = prepare_result_dir(conf, in_file)
     local_dir = os.path.dirname(__file__)
 
     # We take all png files that are not ground truth
@@ -69,11 +69,13 @@ def main(conf_name, gpu):
 
         # The other option is just to run sequentially on a chosen GPU.
         else:
-            run_ZSSR_single_input.main(input_file, ground_truth_file, kernel_files_str, gpu, conf_name, res_dir)
+            if in_file == file_ind:
+                run_ZSSR_single_input.main(input_file, ground_truth_file, kernel_files_str, gpu, conf_name, res_dir)
+                break
 
 
 if __name__ == '__main__':
     conf_str = sys.argv[1] if len(sys.argv) > 1 else None
-    print(conf_str)
     gpu_str = sys.argv[2] if len(sys.argv) > 2 else None
-    main(conf_str, gpu_str)
+    in_file = int(sys.argv[3]) if len(sys.argv) > 3 else None
+    main(conf_str, gpu_str, in_file)

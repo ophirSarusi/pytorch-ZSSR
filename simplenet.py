@@ -26,7 +26,11 @@ class simpleNet(nn.Module):
 		self.conv6 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
 		self.output = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.final = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=1, stride=1, padding=0, bias=True)
+		self.final1 = nn.Conv2d(in_channels=128, out_channels=512, kernel_size=1, stride=1, padding=0, bias=True)
+		self.final2 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=1, stride=1, padding=0, bias=True)
+		self.final3 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=1, stride=1, padding=0, bias=True)
+		self.final4 = nn.Conv2d(in_channels=512, out_channels=256, kernel_size=1, stride=1, padding=0, bias=True)
+
 		self.relu = nn.ReLU(inplace=False)
 
 		# weights initialization
@@ -49,7 +53,13 @@ class simpleNet(nn.Module):
 
 		out = self.output(self.relu(out))
 		out = torch.add(out, residual)
-		out = self.final(self.relu(out))
+		out = self.final1(self.relu(out))
+		out = self.final2(self.relu(out))
+		out = self.final3(self.relu(out))
+		out = self.final4(self.relu(out))
+
+
+
 
 
 		# out = torch.einsum('bcwh,ck->bkwh', out, self.fc)

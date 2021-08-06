@@ -358,8 +358,8 @@ class ZSSRTrainer:
 
         # plot losses if needed
         if self.conf.plot_losses:
-            # self.plot(metric_type='mse')
-            self.plot(metric_type='ssim')
+            self.plot(metric_type='mse')
+            # self.plot(metric_type='ssim')
 
 
 
@@ -379,9 +379,10 @@ class ZSSRTrainer:
             # If other scale factors were applied before, their result is also used (hr_fathers_in)
             transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.RandomCrop(self.conf.crop_size),
-                transforms.RandomHorizontalFlip(0.8),
-                transforms.RandomVerticalFlip(0.8),
+                transforms.RandomCrop(110),
+                # transforms.RandomPerspective(),
+                transforms.RandomHorizontalFlip(0.5),
+                transforms.RandomVerticalFlip(0.5),
             ])
             self.hr_father = random_augment(ims=self.hr_fathers_sources,
                                             base_scales=[1.0] + self.conf.scale_factors,
@@ -394,7 +395,7 @@ class ZSSRTrainer:
                                             shear_sigma=self.conf.augment_shear_sigma,
                                             crop_size=self.conf.crop_size)
 
-            # self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
+            self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
 
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
@@ -406,9 +407,7 @@ class ZSSRTrainer:
             # Display info and save weights
             if not self.iter % self.conf.display_every:
                 print('sf:', self.sf*self.base_sf, ', iteration: ', self.iter, ', loss: ', self.loss[self.iter])
-                for optim in optimizers:
-                    for g in optim.param_groups:
-                        g['lr'] = self.learning_rate
+
 
             # Test network
             if self.conf.run_test and (not self.iter % self.conf.run_test_every):
@@ -416,6 +415,9 @@ class ZSSRTrainer:
 
             # Consider changing learning rate or stop according to iteration number and losses slope
             self.learning_rate_policy()
+            for optim in optimizers:
+                for g in optim.param_groups:
+                    g['lr'] = self.learning_rate
 
             # stop when minimum learning rate was passed
             if self.learning_rate < self.conf.min_learning_rate:

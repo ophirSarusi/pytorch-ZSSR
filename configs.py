@@ -6,9 +6,9 @@ class Config:
     # python_path = '/home/yiqunm2/tensorflow/bin/python'
     scale_factors = [[2.0, 2.0]]  # list of pairs (vertical, horizontal) for gradual increments in resolution
     base_change_sfs = []  # list of scales after which the input is changed to be the output (recommended for high sfs)
-    max_iters = 3000
+    max_iters = 1000
     min_iters = 256
-    min_learning_rate = 9e-7  # this tells the algorithm when to stop (specify lower than the last learning-rate)
+    min_learning_rate = 9e-6  # this tells the algorithm when to stop (specify lower than the last learning-rate)
     width = 64
     depth = 8
     output_flip = True  # geometric self-ensemble (see paper)
@@ -19,21 +19,21 @@ class Config:
     init_variance = 0.1  # variance of weight initializations, typically smaller when residual learning is on
     back_projection_iters = [10]  # for each scale num of bp iterations (same length as scale_factors)
     random_crop = True
-    crop_size = 128
+    crop_size = 180
     noise_std = 0.0  # adding noise to lr-sons. small for real images, bigger for noisy images and zero for ideal case
     init_net_for_each_sf = False  # for gradual sr- should we optimize from the last sf or initialize each time?
     cuda = True
     # Params concerning learning rate policy
-    learning_rate = 0.001
-    learning_rate_change_ratio = 1.05  # ratio between STD and slope of linear fit, under which lr is reduced
+    learning_rate = 0.0005
+    learning_rate_change_ratio = 1.1  # ratio between STD and slope of linear fit, under which lr is reduced
     learning_rate_policy_check_every = 30
     learning_rate_slope_range = 256
 
     # extra params
     rgb_to_lab = False
     loss_type = 'ce'  # ce or mse
-    label_smoothing = True
-    smooth_sigma = 2
+    label_smoothing = False
+    smooth_sigma = 1
 
     # Data augmentation related params
     augment_leave_as_is_probability = 0.05
