@@ -276,6 +276,8 @@ class ZSSRTrainer:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
         if self.conf.rgb_to_lab:
+            if self.conf.loss_type == 'mse':
+                prediction_ndarray *= 100
             # concatenate predicted L channel to interpolated input ab channels
             interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:, :, 1:]
             predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
@@ -334,11 +336,15 @@ class ZSSRTrainer:
                            if self.gt_per_sf is not None else None)
         self.interp_ssim = (self.interp_ssim + [ssim(self.gt_per_sf, interp_sr, multichannel=True)]
                             if self.gt_per_sf is not None else None)
+        # print(f'interpolation true mse: {self.interp_mse}')
+        # print(f'interpolation true ssim: {self.interp_ssim}')
 
         # 4. Reconstruction MSE of simple interpolation over downscaled input
         interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2], self.conf.upscale_method)
         self.interp_rec_mse.append(np.mean(np.ndarray.flatten(np.square(rgb_input - interp_rec))))
         self.interp_rec_ssim.append(ssim(rgb_input, interp_rec, multichannel=True))
+        # print(f'interpolation reconstruct mse: {self.interp_rec_mse}')
+        # print(f'interpolation reconstruct ssim: {self.interp_rec_ssim}')
 
         # Track the iters in which tests are made for the graphics x axis
         self.mse_steps.append(self.iter)

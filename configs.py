@@ -31,10 +31,13 @@ class Config:
 
     # extra params
     rgb_to_lab = True
-    loss_type = 'ce'  # ce or mse
+    # rgb_to_lab = False
+    loss_type = 'mse'  # ce or mse
+    # loss_type = 'ce'  # ce or mse
     label_smoothing = True
-    smooth_sigma = 2
+    smooth_sigma = 1
     network = 'simple'
+    # network = 'fourier'
 
     # Data augmentation related params
     augment_leave_as_is_probability = 1
