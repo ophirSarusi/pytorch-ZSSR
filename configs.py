@@ -6,7 +6,7 @@ class Config:
     # python_path = '/home/yiqunm2/tensorflow/bin/python'
     scale_factors = [[2.0, 2.0]]  # list of pairs (vertical, horizontal) for gradual increments in resolution
     base_change_sfs = []  # list of scales after which the input is changed to be the output (recommended for high sfs)
-    max_iters = 1000
+    max_iters = 50
     min_iters = 256
     min_learning_rate = 9e-7  # this tells the algorithm when to stop (specify lower than the last learning-rate)
     width = 64
@@ -34,10 +34,11 @@ class Config:
     rgb_to_lab = False
     loss_type = 'mse'  # ce or mse
     # loss_type = 'ce'  # ce or mse
-    label_smoothing = True
-    smooth_sigma = 1
-    network = 'simple'
-    # network = 'fourier'
+    # label_smoothing = True
+    # smooth_sigma = 1
+    label_smoothing = False
+    # network = 'simple'
+    network = 'fourier'
 
     # Data augmentation related params
     augment_leave_as_is_probability = 0.8

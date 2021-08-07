@@ -74,31 +74,31 @@ class ZSSRTrainer:
         self.conf = conf
         self.cuda = conf.cuda
 
-        # Read input image (can be either a numpy array or a path to an image file)
-        if self.conf.rgb_to_lab:
-            self.input_rgb = input_img if type(input_img) is not str else img.imread(input_img)
-            if len(self.input_rgb.shape) == 2:
-                self.input_rgb = np.stack((self.input_rgb, self.input_rgb, self.input_rgb), axis=2)
-            self.input_lab = color.rgb2lab(self.input_rgb)
-
-            # get only L channel to feed to the network and normalize between 0 and 1
-            self.input = self.input_lab[:, :, 0] / 100
-
-        else:
-            self.input = input_img if type(input_img) is not str else img.imread(input_img)
-
-        self.Y = False
+        self.input = input_img if type(input_img) is not str else img.imread(input_img)
         if len(self.input.shape) == 2:
-            # the image has only one channel
-            self.Y = True
-            # self.n_channels = 1
-            # self.input = np.expand_dims(self.input, axis=-1)
-            # self.gt = np.expand_dims(self.gt, axis=-1)
+            self.input = np.stack((self.input, self.input, self.input), axis=2)
 
         # For evaluation purposes, ground-truth image can be supplied.
         self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
         if len(self.gt.shape) == 2:
             self.gt = np.stack((self.gt, self.gt, self.gt), axis=2)
+
+        if self.input.shape[0] % 2 > 0:
+            self.input = self.input[1:, :, :]
+            self.gt = self.gt[2:, :, :]
+        if self.input.shape[1] % 2 > 0:
+            self.input = self.input[:, 1:, :]
+            self.gt = self.gt[:, 2:, :]
+
+        # Read input image (can be either a numpy array or a path to an image file)
+        if self.conf.rgb_to_lab:
+            self.input_rgb = self.input.copy()
+            self.input_lab = color.rgb2lab(self.input_rgb)
+
+            # get only L channel to feed to the network and normalize between 0 and 1
+            self.input = self.input_lab[:, :, 0] / 100
+
+        self.Y = False
 
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
@@ -367,9 +367,16 @@ class ZSSRTrainer:
 
         # Display test results if indicated
         if self.conf.display_test_results:
-            print('iteration: ', self.iter, 'reconstruct mse:', self.mse_rec[-1],
+            print('iteration: ', self.iter)
+            print('reconstruct mse:', self.mse_rec[-1],
                   ', true mse:', (self.mse[-1] if self.mse else None),
-                  'reconstruct ssim:', self.ssim_rec[-1], ', true ssim:', (self.ssim[-1] if self.ssim else None))
+                  'reconstruct ssim:', self.ssim_rec[-1],
+                  ', true ssim:', (self.ssim[-1] if self.ssim else None))
+            if self.iter == 0:
+                print('reconstruct bicubic mse: ', self.interp_rec_mse[-1],
+                      ', true bicubic mse:', self.interp_mse[-1] if self.mse else None,
+                      ', reconstruct bicubic ssim:', self.interp_rec_ssim[-1],
+                      ', true bicubic ssim:', self.interp_ssim[-1] if self.ssim else None)
 
         # plot losses if needed
         if self.conf.plot_losses:
