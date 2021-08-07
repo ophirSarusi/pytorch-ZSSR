@@ -1,7 +1,9 @@
+import numpy as np
 import torch.nn as nn
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.image as img
+from torchvision import transforms
 from matplotlib.gridspec import GridSpec
 from skimage import color
 from configs import Config
@@ -9,7 +11,7 @@ from utils import *
 from simplenet import simpleNet, FourierNet
 from image_cross_entropy import ImageCrossEntropy
 from gaussian_smoothing import GaussianTargetSmoothing
-from skimage.metrics import structural_similarity as ssim
+from skimage.measure import compare_ssim as ssim
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -75,6 +77,8 @@ class ZSSRTrainer:
         # Read input image (can be either a numpy array or a path to an image file)
         if self.conf.rgb_to_lab:
             self.input_rgb = input_img if type(input_img) is not str else img.imread(input_img)
+            if len(self.input_rgb.shape) == 2:
+                self.input_rgb = np.stack((self.input_rgb, self.input_rgb, self.input_rgb), axis=2)
             self.input_lab = color.rgb2lab(self.input_rgb)
 
             # get only L channel to feed to the network and normalize between 0 and 1
@@ -87,9 +91,14 @@ class ZSSRTrainer:
         if len(self.input.shape) == 2:
             # the image has only one channel
             self.Y = True
+            # self.n_channels = 1
+            # self.input = np.expand_dims(self.input, axis=-1)
+            # self.gt = np.expand_dims(self.gt, axis=-1)
 
-            # For evaluation purposes, ground-truth image can be supplied.
+        # For evaluation purposes, ground-truth image can be supplied.
         self.gt = ground_truth if type(ground_truth) is not str else img.imread(ground_truth)
+        if len(self.gt.shape) == 2:
+            self.gt = np.stack((self.gt, self.gt, self.gt), axis=2)
 
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
@@ -115,6 +124,7 @@ class ZSSRTrainer:
         # We keep the input file name to save the output with a similar name. If array was given rather than path
         # then we use default provided by the configs
         self.file_name = input_img if type(input_img) is str else conf.name
+        print(self.file_name)
 
     def run(self):
         # Run gradually on all scale factors (if only one jump then this loop only happens once)
@@ -158,9 +168,14 @@ class ZSSRTrainer:
             # Save the final output if indicated
             if self.conf.save_results:
                 sf_str = ''.join('X%.2f' % s for s in self.conf.scale_factors[self.sf_ind])
+
                 plt.imsave('%s/%s_zssr_%s.png' %
                            (self.conf.result_path, os.path.basename(self.file_name)[:-4], sf_str),
                            post_processed_output, vmin=0, vmax=1)
+
+                plt.imsave('%s/%s_zssr_%s_gt.png' %
+                           (self.conf.result_path, os.path.basename(self.file_name)[:-4], sf_str),
+                           self.gt, vmin=0, vmax=1)
 
             # verbose
             print('** Done training for sf=', sf, ' **')
@@ -279,7 +294,7 @@ class ZSSRTrainer:
             if self.conf.loss_type == 'mse':
                 prediction_ndarray *= 100
             # concatenate predicted L channel to interpolated input ab channels
-            interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:, :, 1:]
+            interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:,:,1:]
             predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
             return color.lab2rgb(predicted_lab)
         else:
@@ -340,7 +355,8 @@ class ZSSRTrainer:
         # print(f'interpolation true ssim: {self.interp_ssim}')
 
         # 4. Reconstruction MSE of simple interpolation over downscaled input
-        interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2], self.conf.upscale_method)
+        interp_rec = imresize(self.father_to_son(rgb_input), self.sf, self.input.shape[0:2],
+                              self.conf.upscale_method)
         self.interp_rec_mse.append(np.mean(np.ndarray.flatten(np.square(rgb_input - interp_rec))))
         self.interp_rec_ssim.append(ssim(rgb_input, interp_rec, multichannel=True))
         # print(f'interpolation reconstruct mse: {self.interp_rec_mse}')
@@ -368,23 +384,31 @@ class ZSSRTrainer:
             criterion = ImageCrossEntropy()
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
 
         # main training loop
         for self.iter in range(self.conf.max_iters):
             # Use augmentation from original input image to create current father.
             # If other scale factors were applied before, their result is also used (hr_fathers_in)
+            # transform = transforms.Compose([
+            #     transforms.ToTensor(),
+            #     transforms.RandomCrop(110),
+            #     # transforms.RandomPerspective(),
+            #     transforms.RandomHorizontalFlip(0.5),
+            #     transforms.RandomVerticalFlip(0.5),
+            # ])
             self.hr_father = random_augment(ims=self.hr_fathers_sources,
                                             base_scales=[1.0] + self.conf.scale_factors,
                                             leave_as_is_probability=self.conf.augment_leave_as_is_probability,
                                             no_interpolate_probability=self.conf.augment_no_interpolate_probability,
                                             min_scale=self.conf.augment_min_scale,
-                                            max_scale=([1.0] + self.conf.scale_factors)[
-                                                len(self.hr_fathers_sources) - 1],
+                                            max_scale=([1.0] + self.conf.scale_factors)[len(self.hr_fathers_sources)-1],
                                             allow_rotation=self.conf.augment_allow_rotation,
                                             scale_diff_sigma=self.conf.augment_scale_diff_sigma,
                                             shear_sigma=self.conf.augment_shear_sigma,
                                             crop_size=self.conf.crop_size)
+
+            # self.hr_father = np.transpose(transform(self.hr_father).numpy(), (1, 2, 0))
 
             # Get lr-son from hr-father
             self.lr_son = self.father_to_son(self.hr_father)
@@ -450,7 +474,8 @@ class ZSSRTrainer:
             outputs.append(tmp_output)
 
         # Take the median over all 8 outputs
-        almost_final_sr = np.median(outputs, 0)
+        # almost_final_sr = np.median(outputs, 0)
+        almost_final_sr = np.mean(outputs, 0)
 
         # Again back projection for the final fused result
         for bp_iter in range(self.conf.back_projection_iters[self.sf_ind]):
@@ -474,6 +499,7 @@ class ZSSRTrainer:
         # Change base input image if required (this means current output becomes the new input)
         if abs(self.conf.scale_factors[self.sf_ind] - self.conf.base_change_sfs[self.base_ind]) < 0.001:
             if len(self.conf.base_change_sfs) > self.base_ind:
+
                 # The new input is the current output
                 self.input = self.final_sr
 

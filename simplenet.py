@@ -8,7 +8,7 @@ import numpy as np
 
 
 class simpleNet(nn.Module):
-	def __init__(self, Y=True, loss_type='mse'):
+	def __init__(self, Y=True, loss_type='mse', out_values=256):
 		super(simpleNet, self).__init__()
 
 		self.loss_type = loss_type
@@ -21,7 +21,6 @@ class simpleNet(nn.Module):
 		out_d = in_d
 		if loss_type == 'ce':
 			out_d = 101
-			channels = 64
 
 		self.input = nn.Conv2d(in_channels=in_d, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
@@ -33,8 +32,12 @@ class simpleNet(nn.Module):
 		self.conv6 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
 		if self.loss_type == 'ce':
-			self.output = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-			self.fc = nn.Parameter(torch.normal(0.0, sqrt(2. / channels), size=(channels, out_d)), requires_grad=True)
+			self.output = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1,
+									padding_mode='reflect', bias=False)
+			self.final1 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=True)
+			self.final2 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=True)
+			self.final3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=True)
+			self.final4 = nn.Conv2d(in_channels=channels, out_channels=out_d, kernel_size=1, stride=1, padding=0, bias=True)
 		else:
 			self.output = nn.Conv2d(in_channels=channels, out_channels=out_d, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 			# self.output = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=True)
@@ -62,14 +65,22 @@ class simpleNet(nn.Module):
 		out = self.relu(self.conv6(out))
 
 		out = self.output(out)
-
 		out = torch.add(out, residual)
+
+		if self.loss_type == 'ce':
+			out = self.relu(self.final1(out))
+			out = self.relu(self.final2(out))
+			out = self.relu(self.final3(out))
+			out = self.relu(self.final4(out))
+
 		# out = torch.einsum('bcwh,ck->bkwh', out, self.fc) / 10
 		# out = F.softmax(out, dim=1)
 		# out = torch.einsum('bcwh,ck->bkwh', out, self.range)
 
-		if self.loss_type == 'ce':
-			out = torch.einsum('bcwh,ck->bkwh', out, self.fc)
+		# if self.loss_type == 'ce':
+		# 	out = torch.einsum('bcwh,ck->bkwh', out, self.fc1)
+		# 	out = torch.einsum('bcwh,ck->bkwh', out, self.fc2)
+		# 	out = torch.einsum('bcwh,ck->bkwh', out, self.fc3)
 
 		return out
 
