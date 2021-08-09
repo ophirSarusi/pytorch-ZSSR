@@ -6,9 +6,9 @@ class Config:
     # python_path = '/home/yiqunm2/tensorflow/bin/python'
     scale_factors = [[2.0, 2.0]]  # list of pairs (vertical, horizontal) for gradual increments in resolution
     base_change_sfs = []  # list of scales after which the input is changed to be the output (recommended for high sfs)
-    max_iters = 50
+    max_iters = 1000
     min_iters = 256
-    min_learning_rate = 9e-7  # this tells the algorithm when to stop (specify lower than the last learning-rate)
+    min_learning_rate = 9e-6  # this tells the algorithm when to stop (specify lower than the last learning-rate)
     width = 64
     depth = 8
     output_flip = True  # geometric self-ensemble (see paper)
@@ -16,32 +16,32 @@ class Config:
     upscale_method = 'cubic'  # this is the base interpolation from which we learn the residual (same options as above)
     downscale_gt_method = 'cubic'  # when ground-truth given and intermediate scales tested, we shrink gt to wanted size
     learn_residual = True  # when true, we only learn the residual from base interpolation
-    init_variance = 0.1  # variance of weight initializations, typically smaller when residual learning is on
+    init_variance = 0.01  # variance of weight initializations, typically smaller when residual learning is on
     back_projection_iters = [10]  # for each scale num of bp iterations (same length as scale_factors)
     random_crop = True
-    crop_size = 128
+    crop_size = 160
     noise_std = 0.0  # adding noise to lr-sons. small for real images, bigger for noisy images and zero for ideal case
     init_net_for_each_sf = False  # for gradual sr- should we optimize from the last sf or initialize each time?
     cuda = True
     # Params concerning learning rate policy
-    learning_rate = 0.001
+    learning_rate = 0.0001
     learning_rate_change_ratio = 1.1  # ratio between STD and slope of linear fit, under which lr is reduced
     learning_rate_policy_check_every = 60
     learning_rate_slope_range = 256
 
     # extra params
-    # rgb_to_lab = True
-    rgb_to_lab = False
-    loss_type = 'mse'  # ce or mse
-    # loss_type = 'ce'  # ce or mse
+    rgb_to_lab = True
+    # rgb_to_lab = False
+    # loss_type = 'mse'  # ce or mse
+    loss_type = 'ce'  # ce or mse
     # label_smoothing = True
-    # smooth_sigma = 1
+    # smooth_sigma = 4
     label_smoothing = False
-    # network = 'simple'
-    network = 'fourier'
+    network = 'simple'
+    # network = 'fourier'
 
     # Data augmentation related params
-    augment_leave_as_is_probability = 0.8
+    augment_leave_as_is_probability = 0.6
     augment_no_interpolate_probability = 0.45
     augment_min_scale = 0.5
     augment_scale_diff_sigma = 0.25
@@ -54,6 +54,7 @@ class Config:
     display_every = 20
     name = 'test'
     plot_losses = True
+    # plot_losses = False
     result_path = os.path.dirname(__file__) + '/results'
     create_results_dir = True
     input_path = local_dir = os.path.dirname(__file__) + '/test_data'
@@ -80,7 +81,9 @@ X2_ONE_JUMP_IDEAL_CONF.input_path = os.path.dirname(__file__) + '/set14'
 
 # Same as above but with visualization (Recommended for one image, interactive mode, for debugging)
 X2_IDEAL_WITH_PLOT_CONF = Config()
-X2_IDEAL_WITH_PLOT_CONF.plot_losses = True
+X2_IDEAL_WITH_PLOT_CONF.plot_losses = False
+# X2_IDEAL_WITH_PLOT_CONF.scale_factors = [[1.0, 1.5], [1.5, 1.0], [1.5, 1.5], [1.5, 2.0], [2.0, 1.5], [2.0, 2.0]]
+X2_IDEAL_WITH_PLOT_CONF.back_projection_iters = [6, 6, 8, 10, 10, 12]
 X2_IDEAL_WITH_PLOT_CONF.run_test_every = 20
 # X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/set14_grayscale'
 X2_IDEAL_WITH_PLOT_CONF.input_path = os.path.dirname(__file__) + '/set14'

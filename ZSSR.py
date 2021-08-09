@@ -90,6 +90,8 @@ class ZSSRTrainer:
             self.input = self.input[:, 1:, :]
             self.gt = self.gt[:, 2:, :]
 
+        self.Y = False
+
         # Read input image (can be either a numpy array or a path to an image file)
         if self.conf.rgb_to_lab:
             self.input_rgb = self.input.copy()
@@ -98,7 +100,7 @@ class ZSSRTrainer:
             # get only L channel to feed to the network and normalize between 0 and 1
             self.input = self.input_lab[:, :, 0] / 100
 
-        self.Y = False
+            self.Y = True
 
         # Preprocess the kernels. (see function to see what in includes).
         self.kernels = preprocess_kernels(kernels, conf)
@@ -286,7 +288,7 @@ class ZSSRTrainer:
         elif self.conf.loss_type == 'ce':
             tmp = self.model(interpolated_lr_son)
             prediction_ndarray = np.squeeze(
-                tmp.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy())
+                tmp.cpu().detach().permute(0, 2, 3, 1).argmax(-1).numpy()).astype('float32')
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
 
@@ -294,7 +296,8 @@ class ZSSRTrainer:
             if self.conf.loss_type == 'mse':
                 prediction_ndarray *= 100
             # concatenate predicted L channel to interpolated input ab channels
-            interpolated_ab = imresize(self.input_lab, self.sf, hr_father_shape, self.conf.upscale_method)[:,:,1:]
+            interpolated_ab = color.rgb2lab(imresize(self.input_rgb, self.sf, hr_father_shape, self.conf.upscale_method))[:,:,1:]
+            # interpolated_ab = interpolated_ab.astype('uint8')
             predicted_lab = np.dstack((prediction_ndarray, interpolated_ab))
             return color.lab2rgb(predicted_lab)
         else:
@@ -335,6 +338,10 @@ class ZSSRTrainer:
         # 1. True MSE (only if ground-truth was given), note: this error is before post-processing.
         # Run net on the input to get the output super-resolution (almost final result, only post-processing needed)
         self.sr = self.forward_pass(self.input)
+        plt.figure(1)
+        plt.imshow(self.input_rgb)
+        plt.figure(2)
+        plt.imshow(self.sr)
         self.mse = (self.mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - self.sr)))]
                     if self.gt_per_sf is not None else None)
         self.ssim = (self.ssim +
@@ -347,6 +354,10 @@ class ZSSRTrainer:
 
         # 3. True MSE of simple interpolation for reference (only if ground-truth was given)
         interp_sr = imresize(rgb_input, self.sf, self.output_shape, self.conf.upscale_method)
+
+        # plt.imsave('%s/%s_zssr_%s.png' %
+        #            (self.conf.result_path, os.path.basename(self.file_name)[:-4], 'mse'),
+        #            interp_sr, vmin=0, vmax=1)
         self.interp_mse = (self.interp_mse + [np.mean(np.ndarray.flatten(np.square(self.gt_per_sf - interp_sr)))]
                            if self.gt_per_sf is not None else None)
         self.interp_ssim = (self.interp_ssim + [ssim(self.gt_per_sf, interp_sr, multichannel=True)]
@@ -391,7 +402,7 @@ class ZSSRTrainer:
             criterion = ImageCrossEntropy()
         else:
             raise ValueError(f'Unsupported loss type {self.conf.loss_type}')
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
         # main training loop
         for self.iter in range(self.conf.max_iters):

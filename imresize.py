@@ -42,7 +42,7 @@ def imresize(im, scale_factor=None, output_shape=None, kernel=None, antialiasing
         # Use the affecting position values and the set of weights to calculate the result of resizing along this 1 dim
         out_im = resize_along_dim(out_im, dim, weights, field_of_view)
 
-    return out_im
+    return out_im if out_im.dtype == 'uint8' else np.clip(out_im, 0, 1)
 
 
 def fix_scale_and_size(input_shape, output_shape, scale_factor):

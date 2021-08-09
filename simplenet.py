@@ -34,10 +34,10 @@ class simpleNet(nn.Module):
 		if self.loss_type == 'ce':
 			self.output = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1,
 									padding_mode='reflect', bias=False)
-			self.final1 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=True)
-			self.final2 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=True)
-			self.final3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=True)
-			self.final4 = nn.Conv2d(in_channels=channels, out_channels=out_d, kernel_size=1, stride=1, padding=0, bias=True)
+			self.final1 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=False)
+			self.final2 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=False)
+			self.final3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, bias=False)
+			self.final4 = nn.Conv2d(in_channels=channels, out_channels=out_d, kernel_size=1, stride=1, padding=0, bias=False)
 		else:
 			self.output = nn.Conv2d(in_channels=channels, out_channels=out_d, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 			# self.output = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=True)
@@ -53,10 +53,10 @@ class simpleNet(nn.Module):
 				m.weight.data.normal_(0, sqrt(2. / n))
 
 	def forward(self, x):
-		residual = x
-		inputs = self.relu(self.input(x))
+		# residual = x
+		residual = self.relu(self.input(x))
 
-		out = inputs
+		out = residual
 		out = self.relu(self.conv1(out))
 		out = self.relu(self.conv2(out))
 		out = self.relu(self.conv3(out))
@@ -65,10 +65,10 @@ class simpleNet(nn.Module):
 		out = self.relu(self.conv6(out))
 
 		out = self.output(out)
-		out = torch.add(out, residual)
+		out1 = torch.add(out, residual)
 
 		if self.loss_type == 'ce':
-			out = self.relu(self.final1(out))
+			out = self.relu(self.final1(out1))
 			out = self.relu(self.final2(out))
 			out = self.relu(self.final3(out))
 			out = self.relu(self.final4(out))
@@ -90,6 +90,7 @@ class FourierNet(nn.Module):
 		super(FourierNet, self).__init__()
 		in_d = 1
 		channels = 128
+		fft_channels = 256
 		if not Y:
 			in_d = 3
 
@@ -102,20 +103,20 @@ class FourierNet(nn.Module):
 		self.conv1 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 		self.conv2 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 		self.conv3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.conv4 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.conv5 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
-		self.conv6 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		# self.conv4 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		# self.conv5 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
+		# self.conv6 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 
-		self.f_conv_re1 = nn.Conv2d(in_channels=in_d, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_re2 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_re3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_re4 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_re5 = nn.Conv2d(in_channels=channels, out_channels=in_d, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_im1 = nn.Conv2d(in_channels=in_d, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_im2 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_im3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_im4 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
-		self.f_conv_im5 = nn.Conv2d(in_channels=channels, out_channels=in_d, kernel_size=3, stride=1, padding=1, bias=False)
+		self.f_conv_re1 = nn.Conv2d(in_channels=in_d, out_channels=fft_channels, kernel_size=3, stride=1, padding=1, bias=False)
+		self.f_conv_re2 = nn.Conv2d(in_channels=fft_channels, out_channels=fft_channels, kernel_size=3, stride=1, padding=1, bias=False)
+		# self.f_conv_re3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
+		# self.f_conv_re4 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
+		self.f_conv_re5 = nn.Conv2d(in_channels=fft_channels, out_channels=in_d, kernel_size=3, stride=1, padding=1, bias=False)
+		self.f_conv_im1 = nn.Conv2d(in_channels=in_d, out_channels=fft_channels, kernel_size=3, stride=1, padding=1, bias=False)
+		self.f_conv_im2 = nn.Conv2d(in_channels=fft_channels, out_channels=fft_channels, kernel_size=3, stride=1, padding=1, bias=False)
+		# self.f_conv_im3 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
+		# self.f_conv_im4 = nn.Conv2d(in_channels=channels, out_channels=channels, kernel_size=3, stride=1, padding=1, bias=False)
+		self.f_conv_im5 = nn.Conv2d(in_channels=fft_channels, out_channels=in_d, kernel_size=3, stride=1, padding=1, bias=False)
 
 		self.output = nn.Conv2d(in_channels=channels, out_channels=out_d, kernel_size=3, stride=1, padding=1, padding_mode='reflect', bias=False)
 		self.relu = nn.ReLU(inplace=False)
@@ -136,9 +137,9 @@ class FourierNet(nn.Module):
 		out = self.relu(self.conv1(out))
 		out = self.relu(self.conv2(out))
 		out = self.relu(self.conv3(out))
-		out = self.relu(self.conv4(out))
-		out = self.relu(self.conv5(out))
-		out = self.relu(self.conv6(out))
+		# out = self.relu(self.conv4(out))
+		# out = self.relu(self.conv5(out))
+		# out = self.relu(self.conv6(out))
 
 		out = self.output(out)
 
@@ -147,17 +148,17 @@ class FourierNet(nn.Module):
 		out = fft.rfft2(out1)
 		out_real = self.relu(self.f_conv_re1(out.real))
 		out_real = self.relu(self.f_conv_re2(out_real))
-		out_real = self.relu(self.f_conv_re3(out_real))
-		out_real = self.relu(self.f_conv_re4(out_real))
+		# out_real = self.relu(self.f_conv_re3(out_real))
+		# out_real = self.relu(self.f_conv_re4(out_real))
 		out_real = self.f_conv_re5(out_real)
 		out_imag = self.relu(self.f_conv_im1(out.imag))
 		out_imag = self.relu(self.f_conv_im2(out_imag))
-		out_imag = self.relu(self.f_conv_im3(out_imag))
-		out_imag = self.relu(self.f_conv_im4(out_imag))
+		# out_imag = self.relu(self.f_conv_im3(out_imag))
+		# out_imag = self.relu(self.f_conv_im4(out_imag))
 		out_imag = self.f_conv_im5(out_imag)
 		out = torch.complex(out_real, out_imag)
 
-		out = torch.add(out1, torch.abs(fft.irfft2(out)))
-		# out = torch.add(out1, torch.mul(torch.abs(fft.irfft2(out)), self.param))
+		# out = torch.add(out1, torch.abs(fft.irfft2(out)))
+		out = torch.add(out1, torch.mul(torch.abs(fft.irfft2(out)), self.param))
 
 		return out
